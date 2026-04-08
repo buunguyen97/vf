@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --color-vinfast-blue: #1464F4;
+  --color-vinfast-dark: #0A0A0A;
+  --color-vinfast-success: #00B14F;
+  --color-vinfast-warning: #FF9900;
+  --color-vinfast-danger: #DA303E;
+  
+  --font-family-sans: 'Inter', system-ui, sans-serif;
+}
+
+body {
+  background-color: var(--color-vinfast-dark);
+  color: white;
+  font-family: var(--font-family-sans);
+}

@@ -1,0 +1,77 @@
+import { useState, useRef, useEffect } from 'react';
+import { Car, ChevronDown, Check } from 'lucide-react';
+
+export default function VehicleSelector({ vehicles, selectedVehicleId, onSelect }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div className="bg-white/5 backdrop-blur-2xl rounded-xl p-3 md:p-4 border border-white/10 shadow-lg relative z-40" ref={dropdownRef}>
+      <h2 className="text-xs font-bold text-white/90 mb-3 uppercase tracking-wide flex items-center gap-2">
+        <Car className="w-3.5 h-3.5 text-white/50" /> Dòng Xe Điện VinFast
+      </h2>
+      
+      <div className="relative">
+        <button 
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-full bg-black/40 border border-white/10 hover:border-white/20 text-white rounded-lg py-2.5 px-3 flex justify-between items-center transition-all focus:outline-none focus:ring-1 focus:ring-[#1464F4]"
+        >
+          {selectedVehicle ? (
+            <div className="flex items-center gap-2 text-sm font-bold">
+               <span className="text-[#1464F4] shrink-0"><Car className="w-4 h-4"/></span>
+               {selectedVehicle.name || selectedVehicle.model || 'VinFast Auto'}
+               <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded font-normal text-white/50 ml-1">
+                 {selectedVehicle.battery_capacity_kwh}kWh
+               </span>
+            </div>
+          ) : (
+            <span className="text-sm text-gray-500">Chọn mẫu xe...</span>
+          )}
+          <ChevronDown className={`w-4 h-4 text-white/50 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+
+        {/* Dropdown Menu */}
+        {isOpen && (
+          <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-[#0A0A0A]/95 backdrop-blur-xl border border-white/10 rounded-xl overflow-y-auto max-h-60 z-[100] shadow-[0_20px_50px_rgba(0,0,0,0.5)] animate-in fade-in zoom-in-95 duration-200">
+            {vehicles.map(v => (
+              <button
+                key={v.id}
+                onClick={() => {
+                   onSelect(v.id);
+                   setIsOpen(false);
+                }}
+                className={`w-full text-left p-3 hover:bg-white/10 flex justify-between items-center transition-all border-b border-white/5 last:border-0
+                   ${selectedVehicleId === v.id ? 'bg-[#1464F4]/10' : ''}
+                `}
+              >
+                <div>
+                  <div className="font-bold text-sm text-white flex items-center gap-2">
+                    {v.name || v.model}
+                    {selectedVehicleId === v.id && <Check className="w-4 h-4 text-[#1464F4]" />}
+                  </div>
+                  <div className="text-[10px] text-white/40 mt-1 flex gap-3">
+                    <span>Pin: <strong className="text-white/70">{v.battery_capacity_kwh} kWh</strong></span>
+                    <span>Hao: <strong className="text-white/70">{v.base_consumption_wh_km} Wh/km</strong></span>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
