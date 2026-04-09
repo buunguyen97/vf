@@ -2,9 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../database/init');
 const { estimateRange } = require('../services/rangeEngine');
-const { getDistanceFromLatLonInKm } = require('../services/routingEngine');
 
-router.post('/check-reachability', (req, res) => {
+router.post('/check-reachability', async (req, res) => {
   try {
     const { currentLocation, destination, batteryPercent, vehicleId, temperature, speed, acOn } = req.body;
 
@@ -19,7 +18,7 @@ router.post('/check-reachability', (req, res) => {
       return res.status(404).json({ error: 'Vehicle not found' });
     }
 
-    // 1. Calculate estimated range
+    // 1. Calculate estimated range & consumption
     const { estimatedRangeKm, adjustedConsumptionWhKm } = estimateRange({
       batteryPercent,
       batteryCapacityKwh: vehicle.battery_capacity_kwh,
@@ -29,22 +28,37 @@ router.post('/check-reachability', (req, res) => {
       acOn: acOn !== undefined ? acOn : true
     });
 
-    // 2. Calculate distance to destination
-    const distanceKm = getDistanceFromLatLonInKm(
-      currentLocation[0], currentLocation[1],
-      destination[0], destination[1]
-    );
+    // 2. Get REAL driving distance from OSRM
+    let distanceKm;
+    try {
+      const osrmUrl = `http://router.project-osrm.org/route/v1/driving/${currentLocation[1]},${currentLocation[0]};${destination[1]},${destination[0]}?overview=false`;
+      const osrmRes = await fetch(osrmUrl);
+      const osrmData = await osrmRes.json();
+      
+      if (osrmData.code === 'Ok' && osrmData.routes.length > 0) {
+        distanceKm = osrmData.routes[0].distance / 1000;
+      } else {
+        // Fallback to haversine if OSRM fails
+        const { getDistanceFromLatLonInKm } = require('../services/routingEngine');
+        distanceKm = getDistanceFromLatLonInKm(
+          currentLocation[0], currentLocation[1],
+          destination[0], destination[1]
+        ) * 1.3; // Add 30% road correction factor
+      }
+    } catch (e) {
+      const { getDistanceFromLatLonInKm } = require('../services/routingEngine');
+      distanceKm = getDistanceFromLatLonInKm(
+        currentLocation[0], currentLocation[1],
+        destination[0], destination[1]
+      ) * 1.3;
+    }
 
     // 3. Determine if reachable
-    // We already added a 10% safety buffer in estimateRange, so we just compare directly
     const canReach = estimatedRangeKm >= distanceKm;
     
-    // 4. Calculate remaining battery if they make it
-    // Energy used = distance * consumption (in Wh)
+    // 4. Calculate remaining battery
     const energyUsedWh = distanceKm * adjustedConsumptionWhKm;
     const energyUsedKwh = energyUsedWh / 1000;
-    
-    // Convert energy used to battery percentage
     const batteryUsedPercent = (energyUsedKwh / vehicle.battery_capacity_kwh) * 100;
     const batteryLeftPercent = Math.max(0, batteryPercent - batteryUsedPercent);
 
@@ -62,3 +76,4 @@ router.post('/check-reachability', (req, res) => {
 });
 
 module.exports = router;
+

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap, useMapEvents, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -40,12 +40,16 @@ const destinationIcon = new L.Icon({
   popupAnchor: [0, -32],
 });
 
-function MapUpdater({ center }) {
+function MapUpdater({ center, geoResolved }) {
   const map = useMap();
+  const hasCenteredOnGeo = useRef(false);
   useEffect(() => {
-    // Only adjust center if there isn't an active route zooming over everything
-    map.setView(center);
-  }, [center, map]);
+    // Snap to real GPS position immediately once geolocation resolves
+    if (geoResolved && !hasCenteredOnGeo.current) {
+      map.setView(center, 14);
+      hasCenteredOnGeo.current = true;
+    }
+  }, [center, geoResolved, map]);
   return null;
 }
 
@@ -85,37 +89,64 @@ export default function MapView({
   selectedStationId,
   routeData,
   setDestination,
-  destination
+  destination,
+  geoResolved
 }) {
   const [ambientStations, setAmbientStations] = useState([]);
+  const lastFetchRef = useRef(null);
 
-  // Fetch ambient stations when there is no route
+  // Fetch ambient stations when there is no route (debounced)
   useEffect(() => {
-    if (userLocation && !routeData) {
-      evApi.getChargers(userLocation[0], userLocation[1], 200)
+    if (routeData) return; // Don't fetch when route is active
+    if (!userLocation) return;
+
+    // Debounce station fetches
+    const timer = setTimeout(() => {
+      const key = `${userLocation[0].toFixed(3)},${userLocation[1].toFixed(3)}`;
+      if (lastFetchRef.current === key) return; // Skip if same area
+      lastFetchRef.current = key;
+
+      evApi.getChargers(userLocation[0], userLocation[1], 50)
         .then(setAmbientStations)
         .catch(console.error);
-    }
+    }, 500);
+
+    return () => clearTimeout(timer);
   }, [userLocation, routeData]);
 
   const center = userLocation || [21.0285, 105.8542];
 
-  // Determine stations to show
-  let displayStations = ambientStations;
-  let optimalStationIds = new Set();
-
-  if (routeData) {
-    displayStations = routeData.allRouteStations || [];
-    if (routeData.optimalStations) {
-      routeData.optimalStations.forEach(s => optimalStationIds.add(s.id));
+  // Memoize station display computation
+  const { displayStations, optimalStationIds } = useMemo(() => {
+    if (routeData) {
+      const ids = new Set();
+      if (routeData.optimalStations) {
+        routeData.optimalStations.forEach(s => ids.add(s.id));
+      }
+      return {
+        displayStations: routeData.allRouteStations || [],
+        optimalStationIds: ids
+      };
     }
-  }
+    return {
+      displayStations: ambientStations.slice(0, 150),
+      optimalStationIds: new Set()
+    };
+  }, [routeData, ambientStations]);
 
   return (
     <div className="w-full h-full relative rounded-2xl overflow-hidden border border-gray-800 shadow-xl z-0">
       
+      {/* GPS Loading Overlay */}
+      {!geoResolved && (
+        <div className="absolute inset-0 z-[2000] bg-[#0f172a] flex flex-col items-center justify-center gap-4">
+          <div className="w-12 h-12 border-4 border-[#00B14F] border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-white/70 text-sm font-medium">Đang xác định vị trí của bạn...</span>
+        </div>
+      )}
+
       {/* Help Overlay */}
-      {!destination && (
+      {geoResolved && !destination && (
          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] bg-black/80 text-white text-xs px-4 py-2 rounded-full border border-gray-700 animate-pulse pointer-events-none">
             Click hoặc bấm giữ trên bản đồ để chọn Điểm Đến
          </div>
@@ -136,7 +167,7 @@ export default function MapView({
 
         {userLocation && (
           <>
-            <MapUpdater center={userLocation} />
+            <MapUpdater center={userLocation} geoResolved={geoResolved} />
             <Marker position={userLocation} icon={userIcon}>
               <Popup><div className="font-semibold text-gray-900">Vị trí của bạn</div></Popup>
             </Marker>

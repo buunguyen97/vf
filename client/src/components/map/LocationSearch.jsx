@@ -1,12 +1,24 @@
-import { useState, useEffect } from 'react';
-import { Search, MapPin } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Search, MapPin, Crosshair } from 'lucide-react';
 import { evApi } from '../../services/api';
 
-export default function LocationSearch({ title, placeholder, iconColor = "#1464F4", onLocationSelect }) {
-  const [query, setQuery] = useState('');
+export default function LocationSearch({ title, placeholder, iconColor = "#1464F4", onLocationSelect, defaultDisplay = '', showLocateButton = false, onLocateMe }) {
+  const [query, setQuery] = useState(defaultDisplay);
   const [results, setResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [selectedDisplay, setSelectedDisplay] = useState(''); 
+  const [selectedDisplay, setSelectedDisplay] = useState(defaultDisplay);
+  const [isCurrentLocation, setIsCurrentLocation] = useState(!!defaultDisplay);
+  const initializedRef = useRef(false);
+
+  // Sync when defaultDisplay changes (e.g. after geolocation resolves)
+  useEffect(() => {
+    if (defaultDisplay && !initializedRef.current) {
+      setQuery(defaultDisplay);
+      setSelectedDisplay(defaultDisplay);
+      setIsCurrentLocation(true);
+      initializedRef.current = true;
+    }
+  }, [defaultDisplay]);
 
   useEffect(() => {
     if (query.trim().length <= 2 || query === selectedDisplay) {
@@ -14,6 +26,7 @@ export default function LocationSearch({ title, placeholder, iconColor = "#1464F
       return;
     }
 
+    setIsCurrentLocation(false);
     const debounceTimer = setTimeout(async () => {
       setIsSearching(true);
       try {
@@ -41,25 +54,68 @@ export default function LocationSearch({ title, placeholder, iconColor = "#1464F
     setResults([]);
     setSelectedDisplay(place.display_name);
     setQuery(place.display_name);
+    setIsCurrentLocation(false);
+  };
+
+  const handleLocateMe = () => {
+    if (onLocateMe) {
+      onLocateMe();
+      setQuery('📍 Vị trí hiện tại của bạn');
+      setSelectedDisplay('📍 Vị trí hiện tại của bạn');
+      setIsCurrentLocation(true);
+      setResults([]);
+    }
   };
 
   return (
-    <div className="bg-white/5 backdrop-blur-2xl rounded-xl p-3 md:p-4 border border-white/10 shadow-lg relative z-50">
+    <div className={`bg-white/5 backdrop-blur-2xl rounded-xl p-3 md:p-4 border border-white/10 shadow-lg relative ${results.length > 0 ? 'z-[200]' : 'z-50'}`}>
       <h2 className="text-xs font-bold text-white/90 mb-3 uppercase tracking-wide flex justify-between items-center">
-        <span>{title}</span>
-        <MapPin className="w-3.5 h-3.5 text-white/50" />
+        <span className="flex items-center gap-2">
+          {title}
+          {isCurrentLocation && (
+            <span className="text-[10px] font-medium text-[#00B14F] bg-[#00B14F]/15 px-2 py-0.5 rounded-full normal-case tracking-normal animate-pulse">
+              GPS
+            </span>
+          )}
+        </span>
+        {showLocateButton && !isCurrentLocation ? (
+          <button
+            type="button"
+            onClick={handleLocateMe}
+            className="flex items-center gap-1.5 text-[10px] font-medium text-[#00B14F] bg-[#00B14F]/10 hover:bg-[#00B14F]/20 px-2.5 py-1 rounded-full normal-case tracking-normal transition-colors cursor-pointer border border-[#00B14F]/20"
+          >
+            <Crosshair className="w-3 h-3" />
+            Chọn vị trí hiện tại
+          </button>
+        ) : (
+          <MapPin className="w-3.5 h-3.5 text-white/50" />
+        )}
       </h2>
       <form onSubmit={searchLocation} className="relative group">
         <input 
           type="text" 
           placeholder={placeholder}
-          className="w-full bg-black/40 border border-white/10 text-white rounded-lg py-2 pl-3 pr-10 focus:outline-none focus:ring-1 focus:bg-black/60 focus:border-transparent transition-all placeholder:text-gray-600 text-sm font-medium"
+          className={`w-full bg-black/40 border text-white rounded-lg py-2 pl-3 pr-10 focus:outline-none focus:ring-1 focus:bg-black/60 focus:border-transparent transition-all placeholder:text-gray-600 text-sm font-medium ${isCurrentLocation ? 'border-[#00B14F]/30 bg-[#00B14F]/5' : 'border-white/10'}`}
           style={{ '--tw-ring-color': iconColor }}
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => {
+            if (isCurrentLocation) {
+              setQuery('');
+              setSelectedDisplay('');
+              setIsCurrentLocation(false);
+            }
+          }}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            if (selectedDisplay && e.target.value !== selectedDisplay) {
+              setSelectedDisplay('');
+            }
+          }}
         />
-        <div className="absolute right-1 top-1 bottom-1 aspect-square flex items-center justify-center bg-white/5 rounded-md transition-colors" style={{ backgroundColor: query ? `${iconColor}20` : '' }}>
-          {isSearching ? <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: iconColor }}></div> : <Search className="w-3.5 h-3.5 text-white/50 group-focus-within:text-white" />}
+        <div className="absolute right-1 top-1 bottom-1 flex items-center gap-0.5">
+          <div className="aspect-square h-full flex items-center justify-center bg-white/5 rounded-md transition-colors" style={{ backgroundColor: query ? `${iconColor}20` : '' }}>
+            {isSearching ? <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: iconColor }}></div> : <Search className="w-3.5 h-3.5 text-white/50 group-focus-within:text-white" />}
+          </div>
         </div>
       </form>
 

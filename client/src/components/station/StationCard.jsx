@@ -51,7 +51,10 @@ export default function StationCard({ station, reachability, onClose }) {
                 </p>
                 {reachability.canReach && (
                   <p className="text-xs md:text-sm text-gray-700 mt-1">
-                    Còn khoảng <span className="font-bold text-black">{reachability.batteryLeftPercent}%</span> pin khi đến trạm này ({Math.round(reachability.distanceKm)} km).
+                    {reachability.fromRoutePlanner 
+                      ? <>Pin dự kiến chặng: <span className="font-bold text-black">{reachability.batteryLeftPercent}%</span></>
+                      : <>Còn khoảng <span className="font-bold text-black">{reachability.batteryLeftPercent}%</span> pin khi đến trạm này ({Math.round(reachability.distanceKm)} km).</>
+                    }
                   </p>
                 )}
                 {!reachability.canReach && (

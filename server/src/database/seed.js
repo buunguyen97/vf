@@ -2,51 +2,75 @@ const { getDb } = require('./init');
 
 const vehicles = [
   {
+    name: 'VF3',
+    display_name: 'VinFast VF 3',
+    battery_capacity_kwh: 18.64,
+    base_consumption_wh_km: 90,       // ~9 kWh/100km (NEDC)
+    wltp_range_km: 210,               // NEDC 210km, real ~150-170km
+    image_url: '/assets/vehicles/vf3.png'
+  },
+  {
     name: 'VF5',
     display_name: 'VinFast VF 5 Plus',
     battery_capacity_kwh: 37.23,
-    base_consumption_wh_km: 152,
-    wltp_range_km: 300,
+    base_consumption_wh_km: 113,      // ~11.34 kWh/100km (WLTP)
+    wltp_range_km: 326,               // NEDC 326km
     image_url: '/assets/vehicles/vf5.png'
   },
   {
     name: 'VFe34',
     display_name: 'VinFast VF e34',
     battery_capacity_kwh: 42,
-    base_consumption_wh_km: 157,
-    wltp_range_km: 318,
+    base_consumption_wh_km: 132,      // ~42kWh / 318km
+    wltp_range_km: 318,               // NEDC 318km
     image_url: '/assets/vehicles/vfe34.png'
+  },
+  {
+    name: 'VF6',
+    display_name: 'VinFast VF 6',
+    battery_capacity_kwh: 59.6,
+    base_consumption_wh_km: 154,      // ~15.4 kWh/100km, WLTP ~381km
+    wltp_range_km: 381,               // WLTP ~379-410km
+    image_url: '/assets/vehicles/vf6.png'
+  },
+  {
+    name: 'VF7',
+    display_name: 'VinFast VF 7',
+    battery_capacity_kwh: 75.3,       // 75.3 kWh (top trim)
+    base_consumption_wh_km: 168,      // ~16.8 kWh/100km
+    wltp_range_km: 450,               // WLTP ~431-450km
+    image_url: '/assets/vehicles/vf7.png'
   },
   {
     name: 'VF8_Eco',
     display_name: 'VinFast VF 8 Eco',
     battery_capacity_kwh: 87.7,
-    base_consumption_wh_km: 195,
-    wltp_range_km: 471,
+    base_consumption_wh_km: 186,      // ~18.6 kWh/100km (real-world efficient)
+    wltp_range_km: 471,               // WLTP 471km
     image_url: '/assets/vehicles/vf8.png'
   },
   {
     name: 'VF8_Plus',
     display_name: 'VinFast VF 8 Plus',
     battery_capacity_kwh: 87.7,
-    base_consumption_wh_km: 205,
-    wltp_range_km: 447,
+    base_consumption_wh_km: 192,      // ~19.2 kWh/100km (heavier trim)
+    wltp_range_km: 457,               // WLTP 457km
     image_url: '/assets/vehicles/vf8.png'
   },
   {
     name: 'VF9_Eco',
     display_name: 'VinFast VF 9 Eco',
     battery_capacity_kwh: 123,
-    base_consumption_wh_km: 215,
-    wltp_range_km: 626,
+    base_consumption_wh_km: 211,      // ~21.1 kWh/100km (WLTP)
+    wltp_range_km: 531,               // EPA 330mi ≈ 531km
     image_url: '/assets/vehicles/vf9.png'
   },
   {
     name: 'VF9_Plus',
     display_name: 'VinFast VF 9 Plus',
     battery_capacity_kwh: 123,
-    base_consumption_wh_km: 225,
-    wltp_range_km: 602,
+    base_consumption_wh_km: 237,      // ~23.7 kWh/100km (WLTP, heavier)
+    wltp_range_km: 468,               // EPA 291mi ≈ 468km
     image_url: '/assets/vehicles/vf9.png'
   }
 ];
@@ -78,8 +102,9 @@ function seed() {
   const db = getDb();
 
   console.log('Seeding vehicles...');
+  db.prepare('DELETE FROM vehicles').run();
   const insertVehicle = db.prepare(`
-    INSERT OR IGNORE INTO vehicles (name, display_name, battery_capacity_kwh, base_consumption_wh_km, wltp_range_km, image_url)
+    INSERT INTO vehicles (name, display_name, battery_capacity_kwh, base_consumption_wh_km, wltp_range_km, image_url)
     VALUES (@name, @display_name, @battery_capacity_kwh, @base_consumption_wh_km, @wltp_range_km, @image_url)
   `);
 

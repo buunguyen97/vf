@@ -29,7 +29,8 @@ function App() {
   const [isCalculating, setIsCalculating] = useState(false)
   
   // Route / Map State
-  const [userLocation, setUserLocation] = useState([21.0285, 105.8542]) 
+  const [userLocation, setUserLocation] = useState(null) 
+  const [geoResolved, setGeoResolved] = useState(false)
   const [destination, setDestination] = useState(null)
   const [routeData, setRouteData] = useState(null)
   const [isRouting, setIsRouting] = useState(false)
@@ -39,6 +40,46 @@ function App() {
   
   // Mobile UX State
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [locationName, setLocationName] = useState('')
+
+  // Geolocation helper
+  const acquireCurrentLocation = () => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        position => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          setUserLocation([lat, lon]);
+          setGeoResolved(true);
+
+          // Fetch real outdoor temperature from Open-Meteo
+          fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.current_weather?.temperature !== undefined) {
+                const realTemp = Math.round(data.current_weather.temperature);
+                setConditions(prev => ({ ...prev, temperature: realTemp }));
+              }
+            })
+            .catch(() => {});
+
+          // Reverse geocode to get city name
+          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10&accept-language=vi`)
+            .then(res => res.json())
+            .then(data => {
+              // In Vietnam, major cities (HCM, Hanoi) are "state" level in Nominatim
+              const addr = data.address || {};
+              let name = addr.state || addr.city || addr.town || addr.county || '';
+              // Shorten "Thành phố Hồ Chí Minh" → "TP. Hồ Chí Minh"
+              name = name.replace(/^Thành phố\s+/i, 'TP. ');
+              if (name) setLocationName(name);
+            })
+            .catch(() => {});
+        },
+        () => console.log('Location fallback allowed.')
+      );
+    }
+  };
 
   // Initialization
   useEffect(() => {
@@ -51,12 +92,7 @@ function App() {
       })
       .catch(err => console.error(err))
       
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        position => setUserLocation([position.coords.latitude, position.coords.longitude]),
-        () => console.log('Location fallback allowed.')
-      );
-    }
+    acquireCurrentLocation();
   }, [])
 
   // Range Calculator
@@ -78,32 +114,49 @@ function App() {
     return () => clearTimeout(debounceTimer);
   }, [batteryPercent, selectedVehicleId, conditions]);
 
-  // Optimal Router Calculator Planner
+  // Optimal Router Calculator Planner (debounced)
   useEffect(() => {
     if (!destination || !userLocation || !selectedVehicleId) return;
 
     setIsRouting(true);
-    evApi.getOptimalRoute({
-      origin: userLocation,
-      destination: destination,
-      currentBattery: batteryPercent,
-      targetBattery: targetBatteryPercent,
-      vehicleId: selectedVehicleId,
-      conditions: conditions
-    }).then(data => {
-       setRouteData(data);
-       setSheetOpen(false); // Collapse sheet to show full route map
-    }).catch(console.error)
-      .finally(() => setIsRouting(false));
-    
-  }, [destination, userLocation, batteryPercent, targetBatteryPercent, selectedVehicleId, conditions]);
+    const debounceTimer = setTimeout(() => {
+      evApi.getOptimalRoute({
+        origin: userLocation,
+        destination: destination,
+        currentBattery: batteryPercent,
+        targetBattery: targetBatteryPercent,
+        vehicleId: selectedVehicleId,
+        conditions: conditions
+      }).then(data => {
+         setRouteData(data);
+         setSheetOpen(false);
+      }).catch(console.error)
+        .finally(() => setIsRouting(false));
+    }, 800);
+
+    return () => {
+      clearTimeout(debounceTimer);
+      setIsRouting(false);
+    };
+  }, [destination, batteryPercent, targetBatteryPercent, selectedVehicleId, conditions]);
 
   // Handle station selection
   const handleStationSelect = (station) => {
     setSelectedStation(station);
     setSheetOpen(false); // Hide sheet to look at card
     
-    // Fetch detailed reachability
+    // If station already has batteryAtStation from route planner, use it directly
+    if (station.batteryAtStation !== undefined) {
+      setReachability({
+        canReach: station.batteryAtStation > 0,
+        batteryLeftPercent: station.batteryAtStation,
+        distanceKm: station.distanceFromStartKm || 0,
+        fromRoutePlanner: true
+      });
+      return;
+    }
+
+    // Otherwise, fetch from reachability API (for ambient stations without route)
     evApi.checkReachability({
       currentLocation: userLocation,
       destination: [station.latitude, station.longitude],
@@ -149,7 +202,10 @@ function App() {
                   title="Điểm Xuất Phát" 
                   placeholder="Vị trí hiện tại..." 
                   iconColor="#00B14F"
-                  onLocationSelect={setUserLocation} 
+                  onLocationSelect={setUserLocation}
+                  defaultDisplay={geoResolved ? '📍 Vị trí hiện tại của bạn' : ''}
+                  showLocateButton={true}
+                  onLocateMe={acquireCurrentLocation}
                 />
                 
                 <LocationSearch 
@@ -177,7 +233,8 @@ function App() {
                 
                 <ConditionPanel 
                   conditions={conditions} 
-                  setConditions={setConditions} 
+                  setConditions={setConditions}
+                  locationName={locationName}
                 />
                 
                 {routeData && routeData.optimalStations && (
@@ -234,7 +291,7 @@ function App() {
             estimatedRange={estimatedRange}
             onStationSelect={handleStationSelect}
             selectedStationId={selectedStation?.id}
-            
+            geoResolved={geoResolved}
             routeData={routeData}
             destination={destination}
             setDestination={(dest) => {

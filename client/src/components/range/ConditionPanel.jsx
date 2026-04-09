@@ -1,6 +1,6 @@
 import { Thermometer, Wind, Settings2 } from 'lucide-react';
 
-export default function ConditionPanel({ conditions, setConditions }) {
+export default function ConditionPanel({ conditions, setConditions, locationName }) {
   return (
     <div className="bg-white/5 backdrop-blur-2xl rounded-xl p-3 md:p-4 border border-white/10 shadow-lg relative overflow-hidden">
       <h2 className="text-xs font-bold text-white/90 mb-3 uppercase tracking-wide flex items-center gap-2">
@@ -26,7 +26,10 @@ export default function ConditionPanel({ conditions, setConditions }) {
         
         <div>
           <div className="flex justify-between text-xs mb-1.5 text-white/80 font-medium items-center">
-            <span className="flex items-center gap-1.5"><Thermometer className="w-3.5 h-3.5 text-[#1464F4]" /> Nhiệt Độ</span>
+            <span className="flex items-center gap-1.5 min-w-0">
+              <Thermometer className="w-3.5 h-3.5 text-[#1464F4] shrink-0" />
+              <span className="truncate">Nhiệt Độ Ngoài Trời{locationName ? ` (${locationName})` : ''}</span>
+            </span>
             <span className="font-mono bg-black/40 px-1.5 py-0.5 rounded border border-white/10 text-[10px]">{conditions.temperature} °C</span>
           </div>
           <input 

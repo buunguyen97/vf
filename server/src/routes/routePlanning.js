@@ -28,12 +28,11 @@ router.post('/optimal-route', async (req, res) => {
     const totalDistanceKm = route.distance / 1000;
     const polylineCoords = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
 
-    // 2. Fetch Vehicle
+    // 2. Fetch Vehicle & compute consumption
     const db = getDb();
     const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicleId);
     if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
 
-    // Use rangeEngine to get consumption (Wh/km)
     const { adjustedConsumptionWhKm } = estimateRange({
       batteryPercent: 100,
       batteryCapacityKwh: vehicle.battery_capacity_kwh,
@@ -44,13 +43,9 @@ router.post('/optimal-route', async (req, res) => {
     });
 
     const energyCapacityWh = vehicle.battery_capacity_kwh * 1000;
-    const stations = db.prepare('SELECT * FROM charging_stations').all();
-    
-    const optimalStations = [];
-    const allRouteStations = [];
-    const rejectedStationIds = new Set(); // Prevent checking same trapped station again
+    const allDbStations = db.prepare('SELECT * FROM charging_stations').all();
 
-    // Helper: Distance between two points
+    // Helper: Haversine distance
     function getDistance(lat1, lon1, lat2, lon2) {
       const R = 6371;
       const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -61,124 +56,156 @@ router.post('/optimal-route', async (req, res) => {
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    let currentDistance = 0;
-    let simulatedBattery = currentBattery;
-    let lastChargingDistance = 0;
-    
-    const targetHigh = targetBattery + 15; // Slightly wider window to catch stations
-    const targetLow = targetBattery;
+    // Helper: Convert km to battery % consumed
+    function kmToBatteryPct(km) {
+      return (km * adjustedConsumptionWhKm) / energyCapacityWh * 100;
+    }
 
-    // Simulate Driving
-    let skipUntilDistance = 0;
+    // Helper: Convert battery % to range km
+    function batteryPctToKm(pct) {
+      return (pct / 100) * energyCapacityWh / adjustedConsumptionWhKm;
+    }
+
+    // ============================================================
+    // PASS 1: Collect all stations along the route with distances
+    // ============================================================
+    // Sample route points at regular intervals to find nearby stations
+    const allRouteStations = [];
+    const foundStationIds = new Set();
+    let cumulativeDistance = 0;
 
     for (let i = 0; i < polylineCoords.length - 1; i++) {
-        const p1 = polylineCoords[i];
-        const p2 = polylineCoords[i+1];
-        const segmentDist = getDistance(p1[0], p1[1], p2[0], p2[1]);
-        currentDistance += segmentDist;
-        
-        // Skip iterations if we recently found a charger to avoid finding multiple in same cluster
-        if (currentDistance < skipUntilDistance) {
-            simulatedBattery -= (segmentDist * adjustedConsumptionWhKm / energyCapacityWh * 100);
-            continue;
-        }
+      const p1 = polylineCoords[i];
+      const p2 = polylineCoords[i + 1];
+      const segDist = getDistance(p1[0], p1[1], p2[0], p2[1]);
+      cumulativeDistance += segDist;
 
-        const batteryPctLoss = (segmentDist * adjustedConsumptionWhKm) / energyCapacityWh * 100;
-        simulatedBattery -= batteryPctLoss;
-        
-        // Collect ALL stations near the route exactly when passing by them
-        if (i % 20 === 0 || i === polylineCoords.length - 2) {
-            for (const st of stations) {
-                if (allRouteStations.find(s => s.id === st.id)) continue;
+      // Check every ~5 points to save CPU
+      if (i % 5 !== 0 && i !== polylineCoords.length - 2) continue;
 
-                const distToStation = getDistance(p1[0], p1[1], st.latitude, st.longitude);
-                // Allow up to 10km search radius so we don't miss highway stops
-                if (distToStation <= 10) { 
-                    const stationObj = { 
-                        ...st, 
-                        distanceFromStartKm: currentDistance + distToStation,
-                        batteryAtStation: Math.round(simulatedBattery - (distToStation * adjustedConsumptionWhKm / energyCapacityWh * 100))
-                    };
-                    
-                    if(stationObj.batteryAtStation > 0) {
-                        allRouteStations.push(stationObj);
-                    }
-                }
-            }
-        }
-        
-        // Check Optimal Charing Zones
-        if (simulatedBattery <= targetHigh && simulatedBattery >= 0) {
-            // Find BEST station nearby
-            let bestStation = null;
-            let bestDist = Infinity;
-            
-            for (const st of stations) {
-                if (optimalStations.find(s => s.id === st.id)) continue;
-                if (rejectedStationIds.has(st.id)) continue;
-                
-                const distToStation = getDistance(p1[0], p1[1], st.latitude, st.longitude);
-                // Expand radius to 3km, but we will verify actual DRIVING distance
-                if (distToStation <= 3.0 && distToStation < bestDist) {
-                    bestDist = distToStation;
-                    bestStation = st;
-                }
-            }
-            
-            if (bestStation) {
-                // VERIFICATION: Check real driving distance to prevent Highway Traps!
-                try {
-                    const verifyUrl = `http://router.project-osrm.org/route/v1/driving/${p1[1]},${p1[0]};${bestStation.longitude},${bestStation.latitude}?overview=false`;
-                    const verifyRes = await fetch(verifyUrl);
-                    if (verifyRes.ok) {
-                        const verifyData = await verifyRes.json();
-                        if (verifyData.code === 'Ok' && verifyData.routes.length > 0) {
-                            const realDrivingDistKm = verifyData.routes[0].distance / 1000;
-                            // If driving distance is > 5km, it means we are on a highway with no exit nearby!
-                            if (realDrivingDistKm > 5) {
-                                rejectedStationIds.add(bestStation.id);
-                                bestStation = null; // Reject and continue searching next loop natively
-                            } else {
-                                bestDist = realDrivingDistKm; // Update with accurate consumption driving distance
-                            }
-                        }
-                    }
-                } catch(e) {
-                   console.error("Verification failed", e);
-                }
+      for (const st of allDbStations) {
+        if (foundStationIds.has(st.id)) continue;
 
-                if (bestStation) {
-                    const stationExpectedBattery = Math.round(simulatedBattery - (bestDist * adjustedConsumptionWhKm / energyCapacityWh * 100));
-                    
-                    if (stationExpectedBattery > 0) {
-                        const finalSt = {
-                            ...bestStation,
-                            batteryAtStation: stationExpectedBattery,
-                            isOptimal: true
-                        };
-                        optimalStations.push(finalSt);
-                        
-                        // RECHARGE ASSUMPTION
-                        // User charges to 90%
-                        simulatedBattery = 90;
-                        lastChargingDistance = currentDistance;
-                        skipUntilDistance = currentDistance + 50; // Skip next 50km
-                    }
-                }
-            }
+        const distToRoute = getDistance(p1[0], p1[1], st.latitude, st.longitude);
+        if (distToRoute <= 5) { // Within 5km of route
+          foundStationIds.add(st.id);
+          allRouteStations.push({
+            ...st,
+            distanceFromStartKm: Math.round((cumulativeDistance + distToRoute) * 10) / 10,
+            detourKm: Math.round(distToRoute * 10) / 10,
+          });
         }
-        
-        // Critical safeguard (if we drop below 0, reset just to keep simulation alive)
-        if (simulatedBattery <= 0) {
-            simulatedBattery = 80;
-            skipUntilDistance = currentDistance + 10;
-        }
+      }
     }
+
+    // Sort stations by distance from start
+    allRouteStations.sort((a, b) => a.distanceFromStartKm - b.distanceFromStartKm);
+
+    // ============================================================
+    // PASS 2: Greedy "Gas Station" Algorithm
+    // ============================================================
+    // Strategy: Drive as far as possible. Only charge when you MUST 
+    // (i.e., you can't reach the next station or destination without charging).
+    // When choosing where to charge, pick the FARTHEST reachable station.
+    // This minimizes total stops.
+    // ============================================================
+
+    const optimalStations = [];
+    let currentBatteryPct = currentBattery;
+    let currentPositionKm = 0;
+    // Soft floor: target ±5% flexibility
+    // e.g., target 25% → hard floor 20%, arrival battery ~20-30%
+    const minBatteryPct = Math.max(targetBattery - 5, 5); 
+    const chargeToPercent = 90; // Charge up to 90% at each stop
+
+    // Filter route stations to only those reachable (positive battery remaining)
+    const candidateStations = allRouteStations.filter(st => {
+      // Must be reachable from origin with full starting battery
+      return st.distanceFromStartKm < totalDistanceKm;
+    });
+
+    let safetyCounter = 0; // Prevent infinite loop
+    const maxStops = 20;
+
+    while (safetyCounter < maxStops) {
+      safetyCounter++;
+
+      // How far can we go from current position with current battery?
+      const maxRangeKm = batteryPctToKm(currentBatteryPct - minBatteryPct);
+      const maxReachableKm = currentPositionKm + maxRangeKm;
+
+      // Can we reach the destination?
+      if (maxReachableKm >= totalDistanceKm) {
+        // We can make it without charging! 
+        break;
+      }
+
+      // We CAN'T reach the destination. Find the FARTHEST station we can reach.
+      // This is the greedy choice — go as far as possible before stopping.
+      let bestStation = null;
+      let bestStationIdx = -1;
+
+      for (let i = 0; i < candidateStations.length; i++) {
+        const st = candidateStations[i];
+        
+        // Skip stations behind us
+        if (st.distanceFromStartKm <= currentPositionKm) continue;
+
+        // Can we reach this station?
+        const distToStation = st.distanceFromStartKm - currentPositionKm;
+        const batteryNeeded = kmToBatteryPct(distToStation);
+        const batteryOnArrival = currentBatteryPct - batteryNeeded;
+
+        if (batteryOnArrival >= minBatteryPct) {
+          // We can reach this station — keep looking for a farther one
+          bestStation = { ...st, batteryAtStation: Math.round(batteryOnArrival) };
+          bestStationIdx = i;
+        }
+      }
+
+      if (!bestStation) {
+        // No reachable station found — we're stuck. Break to avoid infinite loop.
+        console.warn(`[RoutePlanner] No reachable station from km ${currentPositionKm.toFixed(1)}, battery ${currentBatteryPct.toFixed(1)}%`);
+        break;
+      }
+
+      // Charge at this station
+      bestStation.isOptimal = true;
+      optimalStations.push(bestStation);
+
+      // Update position and battery
+      currentPositionKm = bestStation.distanceFromStartKm;
+      currentBatteryPct = chargeToPercent; // Assume charging to 90%
+    }
+
+    // Calculate battery at each route station for display
+    const displayStations = allRouteStations.map(st => {
+      const distFromStart = st.distanceFromStartKm;
+      
+      // Find which charging segment this station is in
+      let segmentStartKm = 0;
+      let segmentStartBattery = currentBattery;
+      
+      for (const optSt of optimalStations) {
+        if (optSt.distanceFromStartKm < distFromStart) {
+          segmentStartKm = optSt.distanceFromStartKm;
+          segmentStartBattery = chargeToPercent;
+        } else {
+          break;
+        }
+      }
+
+      const distInSegment = distFromStart - segmentStartKm;
+      const batteryUsed = kmToBatteryPct(distInSegment);
+      const batteryAtStation = Math.round(segmentStartBattery - batteryUsed);
+
+      return { ...st, batteryAtStation };
+    }).filter(st => st.batteryAtStation > 0);
 
     res.json({
         totalDistanceKm: Math.round(totalDistanceKm),
         polylineCoords,
-        allRouteStations,
+        allRouteStations: displayStations,
         optimalStations
     });
 
@@ -189,3 +216,4 @@ router.post('/optimal-route', async (req, res) => {
 });
 
 module.exports = router;
+
