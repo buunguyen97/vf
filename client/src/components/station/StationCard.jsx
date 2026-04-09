@@ -1,7 +1,40 @@
-import { BatteryCharging, ExternalLink, Zap, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { BatteryCharging, ExternalLink, Zap, AlertTriangle, CheckCircle2, Coffee, UtensilsCrossed, ShoppingBag, Store, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { evApi } from '../../services/api';
+
+const AMENITY_EMOJI = {
+  restaurant: '🍽️', cafe: '☕', fast_food: '🍔',
+  convenience: '🏪', supermarket: '🛒'
+};
+const AMENITY_LABELS = {
+  restaurant: 'Nhà hàng', cafe: 'Café', fast_food: 'Đồ ăn nhanh',
+  convenience: 'Tiện lợi', supermarket: 'Siêu thị'
+};
 
 export default function StationCard({ station, reachability, onClose }) {
   if (!station) return null;
+
+  const [amenities, setAmenities] = useState(null);
+  const [loadingAmenities, setLoadingAmenities] = useState(false);
+  const [showAmenities, setShowAmenities] = useState(false);
+
+  const loadAmenities = async () => {
+    if (amenities) {
+      setShowAmenities(!showAmenities);
+      return;
+    }
+    setLoadingAmenities(true);
+    setShowAmenities(true);
+    try {
+      const data = await evApi.getNearbyAmenities(station.latitude, station.longitude, 500);
+      setAmenities(data);
+    } catch (err) {
+      console.error(err);
+      setAmenities([]);
+    } finally {
+      setLoadingAmenities(false);
+    }
+  };
 
   return (
     <div className="absolute top-[60px] md:top-4 right-2 md:right-4 left-2 md:left-auto md:w-[360px] z-[1000] bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden animate-in fade-in slide-in-from-bottom-5 md:slide-in-from-right text-gray-900 pointer-events-auto">
@@ -21,7 +54,7 @@ export default function StationCard({ station, reachability, onClose }) {
         </button>
       </div>
       
-      <div className="p-4 md:p-5 space-y-3 md:space-y-4">
+      <div className="p-4 md:p-5 space-y-3 md:space-y-4 max-h-[60vh] overflow-y-auto">
         {/* Basic Info */}
         <div>
           <p className="text-sm text-gray-600 leading-snug line-clamp-2 md:line-clamp-none">{station.address}</p>
@@ -71,6 +104,66 @@ export default function StationCard({ station, reachability, onClose }) {
              <p className="text-xs text-gray-500 mt-2">Đang phân tích...</p>
           </div>
         )}
+
+        {/* Nearby Amenities Section */}
+        <div className="border border-gray-100 rounded-xl overflow-hidden">
+          <button
+            onClick={loadAmenities}
+            className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors"
+          >
+            <span className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+              <Coffee className="w-3.5 h-3.5 text-[#8B5CF6]" />
+              Quán ăn & Café gần trạm
+              {amenities && (
+                <span className="bg-[#8B5CF6]/10 text-[#8B5CF6] px-1.5 py-0.5 rounded text-[10px] font-bold">{amenities.length}</span>
+              )}
+            </span>
+            {loadingAmenities ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#8B5CF6]" />
+            ) : showAmenities ? (
+              <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+            )}
+          </button>
+
+          {showAmenities && loadingAmenities && (
+            <div className="p-3 flex items-center gap-2 justify-center">
+              <Loader2 className="w-4 h-4 animate-spin text-[#8B5CF6]" />
+              <span className="text-xs text-gray-400">Đang tìm...</span>
+            </div>
+          )}
+
+          {showAmenities && amenities && (
+            <div className="max-h-44 overflow-y-auto">
+              {amenities.length === 0 ? (
+                <p className="text-xs text-gray-400 italic p-3 text-center">Không tìm thấy quán ăn/café nào gần đây</p>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {amenities.map((a, i) => (
+                    <a
+                      key={i}
+                      href={`https://www.google.com/maps/search/?api=1&query=${a.lat},${a.lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors group/a"
+                    >
+                      <span className="text-base shrink-0">{AMENITY_EMOJI[a.type] || '📍'}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-gray-700 truncate group-hover/a:text-gray-900">{a.name}</p>
+                        <p className="text-[10px] text-gray-400">
+                          {AMENITY_LABELS[a.type] || a.type} • {a.distance >= 1000 ? `${(a.distance/1000).toFixed(1)}km` : `${a.distance}m`}
+                          {a.cuisine && ` • ${a.cuisine}`}
+                        </p>
+                      </div>
+                      <ExternalLink className="w-3 h-3 text-gray-300 group-hover/a:text-gray-500 shrink-0" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         <button 
           className="w-full flex items-center justify-center gap-2 bg-[#0A0A0A] hover:bg-black text-white font-medium py-3 rounded-xl transition-colors text-sm md:text-base shadow-lg"

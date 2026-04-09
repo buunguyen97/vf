@@ -36,6 +36,94 @@ app.use('/api', reachabilityRoutes);
 app.use('/api', chargerRoutes);
 app.use('/api', routePlanningRoutes);
 
+// Nominatim search proxy (avoids 403 from browser - User-Agent required)
+app.get('/api/search-location', async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q) return res.json([]);
+    
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&countrycodes=vn&limit=5&accept-language=vi`;
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'VFRangeAssistant/1.0' }
+    });
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    console.error('Nominatim search error:', err);
+    res.json([]);
+  }
+});
+
+// Nearby amenities (restaurants, cafes) via Overpass API with auto-expanding radius
+app.get('/api/nearby-amenities', async (req, res) => {
+  try {
+    const { lat, lng, radius: initialRadius = 500 } = req.query;
+    if (!lat || !lng) return res.json([]);
+
+    // Auto-expanding radius: try 500m, 1km, 2km, 3km until we find results
+    const radiusSteps = [parseInt(initialRadius), 1000, 2000, 3000];
+    let amenities = [];
+
+    for (const radius of radiusSteps) {
+      const overpassQuery = `
+        [out:json][timeout:15];
+        (
+          node["amenity"="restaurant"](around:${radius},${lat},${lng});
+          node["amenity"="cafe"](around:${radius},${lat},${lng});
+          node["amenity"="fast_food"](around:${radius},${lat},${lng});
+          node["shop"="convenience"](around:${radius},${lat},${lng});
+          node["shop"="supermarket"](around:${radius},${lat},${lng});
+        );
+        out body 20;
+      `;
+
+      const response = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'VFRangeAssistant/1.0' },
+        body: `data=${encodeURIComponent(overpassQuery)}`
+      });
+      const data = await response.json();
+
+      // Parse and return clean results
+      amenities = (data.elements || []).map(el => {
+        const tags = el.tags || {};
+        // Calculate distance from station
+        const dLat = (el.lat - parseFloat(lat)) * 111320;
+        const dLng = (el.lon - parseFloat(lng)) * 111320 * Math.cos(parseFloat(lat) * Math.PI / 180);
+        const distance = Math.round(Math.sqrt(dLat * dLat + dLng * dLng));
+
+        // Determine type - shops get mapped to a friendly type
+        let type = tags.amenity || tags.shop || 'other';
+        if (tags.shop === 'convenience') type = 'convenience';
+        if (tags.shop === 'supermarket') type = 'supermarket';
+
+        return {
+          name: tags.name || tags['name:vi'] || tags['name:en'] || 'Không tên',
+          type,
+          cuisine: tags.cuisine || '',
+          address: tags['addr:street'] || tags['addr:full'] || '',
+          lat: el.lat,
+          lng: el.lon,
+          distance, // meters from station
+          openingHours: tags.opening_hours || '',
+          searchRadius: radius // include which radius found it
+        };
+      })
+      .filter(a => a.name !== 'Không tên')
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 15);
+
+      // If we found results, stop expanding
+      if (amenities.length > 0) break;
+    }
+
+    res.json(amenities);
+  } catch (err) {
+    console.error('Overpass API error:', err);
+    res.json([]);
+  }
+});
+
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('Shutting down server...');

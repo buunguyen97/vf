@@ -31,13 +31,15 @@ export const evApi = {
   },
 
   searchLocation: async (query) => {
-    const res = await axios.get(`https://nominatim.openstreetmap.org/search`, {
-      params: {
-        q: query,
-        format: 'json',
-        countrycodes: 'vn',
-        limit: 5
-      }
+    const res = await axios.get(`${API_URL}/search-location`, {
+      params: { q: query }
+    });
+    return res.data;
+  },
+
+  getNearbyAmenities: async (lat, lng, radius = 500) => {
+    const res = await axios.get(`${API_URL}/nearby-amenities`, {
+      params: { lat, lng, radius }
     });
     return res.data;
   }

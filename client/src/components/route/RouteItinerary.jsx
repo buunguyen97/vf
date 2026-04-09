@@ -1,4 +1,146 @@
-import { MapPin, Zap, Flag } from 'lucide-react';
+import { useState } from 'react';
+import { MapPin, Zap, Flag, Coffee, UtensilsCrossed, ChevronDown, ChevronUp, ExternalLink, Loader2, ShoppingBag, Store } from 'lucide-react';
+import { evApi } from '../../services/api';
+
+const AMENITY_ICONS = {
+  restaurant: UtensilsCrossed,
+  cafe: Coffee,
+  fast_food: UtensilsCrossed,
+  convenience: ShoppingBag,
+  supermarket: Store
+};
+
+const AMENITY_LABELS = {
+  restaurant: 'Nhà hàng',
+  cafe: 'Café',
+  fast_food: 'Đồ ăn nhanh',
+  convenience: 'Cửa hàng tiện lợi',
+  supermarket: 'Siêu thị'
+};
+
+const AMENITY_COLORS = {
+  restaurant: '#F59E0B',
+  cafe: '#8B5CF6',
+  fast_food: '#EF4444',
+  convenience: '#10B981',
+  supermarket: '#3B82F6'
+};
+
+const AMENITY_EMOJI = {
+  restaurant: '🍽️',
+  cafe: '☕',
+  fast_food: '🍔',
+  convenience: '🏪',
+  supermarket: '🛒'
+};
+
+function AmenityList({ station }) {
+  const [amenities, setAmenities] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  const loadAmenities = async () => {
+    if (amenities) {
+      setExpanded(!expanded);
+      return;
+    }
+    setLoading(true);
+    setExpanded(true);
+    try {
+      const data = await evApi.getNearbyAmenities(station.latitude, station.longitude, 500);
+      setAmenities(data);
+    } catch (err) {
+      console.error(err);
+      setAmenities([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const maxRadius = amenities && amenities.length > 0 
+    ? amenities[amenities.length - 1].searchRadius 
+    : null;
+
+  return (
+    <div className="mt-2">
+      <button
+        onClick={(e) => { e.stopPropagation(); loadAmenities(); }}
+        className="flex items-center gap-1.5 text-[10px] font-semibold text-white/50 hover:text-white/80 transition-colors cursor-pointer group/amenity"
+      >
+        <Coffee className="w-3 h-3 group-hover/amenity:text-[#8B5CF6] transition-colors" />
+        Quán ăn & Café gần đây
+        {loading ? (
+          <Loader2 className="w-3 h-3 animate-spin text-[#8B5CF6]" />
+        ) : expanded ? (
+          <ChevronUp className="w-3 h-3" />
+        ) : (
+          <ChevronDown className="w-3 h-3" />
+        )}
+        {amenities && !loading && (
+          <span className={`px-1.5 rounded text-[9px] font-bold ${amenities.length > 0 ? 'bg-[#8B5CF6]/20 text-[#8B5CF6]' : 'bg-white/10 text-white/40'}`}>
+            {amenities.length}
+          </span>
+        )}
+      </button>
+
+      {expanded && loading && (
+        <div className="mt-2 flex items-center gap-2 pl-4">
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#8B5CF6]" />
+          <span className="text-[10px] text-white/40 italic">Đang tìm quán ăn gần trạm sạc...</span>
+        </div>
+      )}
+
+      {expanded && amenities && (
+        <div className="mt-2 space-y-0.5 max-h-48 overflow-y-auto hide-scrollbar">
+          {amenities.length === 0 ? (
+            <p className="text-[10px] text-white/30 italic pl-4">Không tìm thấy quán ăn/café nào trong bán kính 3km</p>
+          ) : (
+            <>
+              {maxRadius && maxRadius > 500 && (
+                <div className="text-[9px] text-white/25 italic pl-4 mb-1">
+                  🔍 Mở rộng tìm kiếm: bán kính {maxRadius >= 1000 ? `${maxRadius/1000}km` : `${maxRadius}m`}
+                </div>
+              )}
+              {amenities.map((a, i) => {
+                const Icon = AMENITY_ICONS[a.type] || Coffee;
+                const color = AMENITY_COLORS[a.type] || '#8B5CF6';
+                const emoji = AMENITY_EMOJI[a.type] || '📍';
+                const label = AMENITY_LABELS[a.type] || a.type;
+                return (
+                  <a
+                    key={i}
+                    href={`https://www.google.com/maps/search/?api=1&query=${a.lat},${a.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-white/5 transition-all group/item"
+                  >
+                    <div
+                      className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-[11px]"
+                      style={{ backgroundColor: `${color}15`, border: `1px solid ${color}30` }}
+                    >
+                      {emoji}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-semibold text-white/70 truncate group-hover/item:text-white/90 transition-colors">
+                        {a.name}
+                      </p>
+                      <p className="text-[9px] text-white/30">
+                        {label} • {a.distance >= 1000 ? `${(a.distance/1000).toFixed(1)}km` : `${a.distance}m`}
+                        {a.cuisine && ` • ${a.cuisine}`}
+                      </p>
+                    </div>
+                    <ExternalLink className="w-2.5 h-2.5 text-white/15 group-hover/item:text-white/40 shrink-0 transition-colors" />
+                  </a>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function RouteItinerary({ stations, onStationSelect }) {
   if (!stations || stations.length === 0) return null;
@@ -41,6 +183,9 @@ export default function RouteItinerary({ stations, onStationSelect }) {
                   Dự Kiến: {station.batteryAtStation}%
                 </span>
               </div>
+
+              {/* Nearby amenities toggle */}
+              <AmenityList station={station} />
             </div>
           </div>
         ))}
