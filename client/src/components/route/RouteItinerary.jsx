@@ -142,16 +142,32 @@ function AmenityList({ station }) {
   );
 }
 
-export default function RouteItinerary({ stations, onStationSelect }) {
+export default function RouteItinerary({ stations, onStationSelect, insufficientBattery }) {
   if (!stations || stations.length === 0) return null;
 
   return (
-    <div className="bg-white/5 backdrop-blur-3xl rounded-2xl p-5 border border-white/10 shadow-[0_10px_40px_rgba(20,100,244,0.1)] overflow-hidden shrink-0 mt-2 relative">
+    <div className="bg-[#0A0A0A]/95 backdrop-blur-xl rounded-2xl p-4 border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden shrink-0 relative">
       {/* Decorative gradient */}
-      <div className="absolute top-0 right-0 w-32 h-32 bg-[#00B14F]/10 blur-[40px] pointer-events-none"></div>
+      <div className={`absolute top-0 right-0 w-32 h-32 ${insufficientBattery ? 'bg-[#DA303E]/15' : 'bg-[#00B14F]/10'} blur-[40px] pointer-events-none`}></div>
+
+      {/* Emergency Warning Banner */}
+      {insufficientBattery && (
+        <div className="bg-gradient-to-r from-[#DA303E]/20 to-[#DA303E]/10 border border-[#DA303E]/30 rounded-xl p-3 mb-4 relative z-10 animate-pulse">
+          <div className="flex items-start gap-2">
+            <span className="text-lg shrink-0 mt-0.5">⚠️</span>
+            <div>
+              <p className="text-[11px] font-bold text-[#DA303E] uppercase tracking-wide">Pin Không Đủ Đến Điểm Đến</p>
+              <p className="text-[10px] text-white/60 mt-1 leading-relaxed">
+                Mức pin hiện tại quá thấp để đến đích. Hãy sạc tại trạm gần nhất bên dưới trước khi tiếp tục hành trình.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <h2 className="text-[11px] font-black text-white/90 mb-5 uppercase tracking-[0.2em] flex items-center gap-2 relative z-10">
-         <Zap className="w-4 h-4 text-[#00B14F]" /> Lộ Tối Ưu (Khuyên Dùng)
+         <Zap className={`w-4 h-4 ${insufficientBattery ? 'text-[#DA303E]' : 'text-[#00B14F]'}`} />
+         {insufficientBattery ? '⚡ Sạc Khẩn Cấp — Trạm Gần Nhất' : 'Lộ Tối Ưu (Khuyên Dùng)'}
       </h2>
       
       <div className="space-y-0 relative z-10 before:absolute before:top-4 before:bottom-4 before:left-[11px] before:w-px before:bg-gradient-to-b before:from-[#1464F4]/50 before:via-[#00B14F]/50 before:to-transparent">

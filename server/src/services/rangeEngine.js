@@ -1,5 +1,6 @@
-function estimateRange({ batteryPercent, batteryCapacityKwh, baseConsumption, temperature, speed, acOn }) {
-  let consumption = baseConsumption; // Wh/km
+function estimateRange({ batteryPercent, batteryCapacityKwh, baseConsumption, consumptionOverride, temperature, speed, acOn }) {
+  // Use user-provided consumption if available, otherwise fall back to vehicle default
+  let consumption = consumptionOverride || baseConsumption; // Wh/km
   
   // Temperature adjustment
   if (temperature > 35) {

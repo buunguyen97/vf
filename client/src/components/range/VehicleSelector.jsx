@@ -19,9 +19,9 @@ export default function VehicleSelector({ vehicles, selectedVehicleId, onSelect 
   }, []);
 
   return (
-    <div className="bg-white/5 backdrop-blur-2xl rounded-xl p-3 md:p-4 border border-white/10 shadow-lg relative z-40" ref={dropdownRef}>
-      <h2 className="text-xs font-bold text-white/90 mb-3 uppercase tracking-wide flex items-center gap-2">
-        <Car className="w-3.5 h-3.5 text-white/50" /> Dòng Xe Điện VinFast
+    <div className="bg-white/5 backdrop-blur-2xl rounded-xl p-3 md:p-3.5 border border-white/10 shadow-lg relative z-40" ref={dropdownRef}>
+      <h2 className="text-[11px] md:text-xs font-bold text-white/80 mb-2.5 uppercase tracking-wide flex items-center gap-1.5">
+        <Car className="w-3.5 h-3.5 text-white/60" /> Dòng Xe Điện VinFast
       </h2>
       
       <div className="relative">
@@ -30,7 +30,7 @@ export default function VehicleSelector({ vehicles, selectedVehicleId, onSelect 
           className="w-full bg-black/40 border border-white/10 hover:border-white/20 text-white rounded-lg py-2.5 px-3 flex justify-between items-center transition-all focus:outline-none focus:ring-1 focus:ring-[#1464F4]"
         >
           {selectedVehicle ? (
-            <div className="flex items-center gap-2 text-sm font-bold">
+            <div className="flex items-center gap-2 text-[13px] md:text-sm font-bold">
                <span className="text-[#1464F4] shrink-0"><Car className="w-4 h-4"/></span>
                {selectedVehicle.name || selectedVehicle.model || 'VinFast Auto'}
                <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded font-normal text-white/50 ml-1">
@@ -62,7 +62,7 @@ export default function VehicleSelector({ vehicles, selectedVehicleId, onSelect 
                     {v.name || v.model}
                     {selectedVehicleId === v.id && <Check className="w-4 h-4 text-[#1464F4]" />}
                   </div>
-                  <div className="text-[10px] text-white/40 mt-1 flex gap-3">
+                  <div className="text-[10px] md:text-[11px] text-white/40 mt-1 flex gap-3">
                     <span>Pin: <strong className="text-white/70">{v.battery_capacity_kwh} kWh</strong></span>
                     <span>Hao: <strong className="text-white/70">{v.base_consumption_wh_km} Wh/km</strong></span>
                   </div>

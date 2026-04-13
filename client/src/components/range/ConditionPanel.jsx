@@ -1,17 +1,89 @@
+import { useState, useRef, useEffect } from 'react';
 import { Thermometer, Wind, Settings2 } from 'lucide-react';
+
+// Reusable inline editable value badge
+function EditableBadge({ value, unit, min, max, step, onChange, className = '' }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState('');
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  const handleEditStart = () => {
+    setEditValue(String(value));
+    setIsEditing(true);
+  };
+
+  const handleEditConfirm = () => {
+    const val = parseFloat(editValue);
+    if (!isNaN(val)) {
+      const clamped = Math.max(min, Math.min(max, step ? Math.round(val / step) * step : val));
+      onChange(clamped);
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') handleEditConfirm();
+    if (e.key === 'Escape') setIsEditing(false);
+  };
+
+  if (isEditing) {
+    return (
+      <div className={`font-mono bg-black/60 border border-white/20 rounded flex items-center gap-0.5 ${className}`}>
+        <input
+          ref={inputRef}
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={handleEditConfirm}
+          onKeyDown={handleKeyDown}
+          className="w-12 text-right text-[10px] font-mono bg-transparent border-none text-white outline-none px-1 py-0.5 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+        <span className="text-[10px] text-white/50 pr-1">{unit}</span>
+      </div>
+    );
+  }
+
+  return (
+    <span
+      onClick={handleEditStart}
+      className={`font-mono bg-black/40 px-1.5 py-0.5 rounded border border-white/10 text-[10px] cursor-pointer hover:bg-black/60 hover:border-white/20 transition-all select-none ${className}`}
+      title="Nhấn để nhập tay"
+    >
+      {value} {unit}
+    </span>
+  );
+}
 
 export default function ConditionPanel({ conditions, setConditions, locationName }) {
   return (
-    <div className="bg-white/5 backdrop-blur-2xl rounded-xl p-3 md:p-4 border border-white/10 shadow-lg relative overflow-hidden">
-      <h2 className="text-xs font-bold text-white/90 mb-3 uppercase tracking-wide flex items-center gap-2">
-        <Settings2 className="w-3.5 h-3.5 text-white/50" /> Điều Kiện Lái Xe
+    <div className="bg-white/5 backdrop-blur-2xl rounded-xl p-3 md:p-3.5 border border-white/10 shadow-lg relative overflow-hidden">
+      <h2 className="text-[11px] md:text-xs font-bold text-white/80 mb-2.5 uppercase tracking-wide flex items-center gap-1.5">
+        <Settings2 className="w-3.5 h-3.5 text-white/60" /> Điều Kiện Lái Xe
       </h2>
       
-      <div className="space-y-4 relative z-10">
+      <div className="space-y-3 relative z-10">
+        {/* Speed */}
         <div>
-          <div className="flex justify-between text-xs mb-1.5 text-white/80 font-medium items-center">
+          <div className="flex justify-between text-[11px] md:text-xs mb-1.5 text-white/70 font-medium items-center">
             <span className="flex items-center gap-1.5"><Thermometer className="w-3.5 h-3.5 text-[#F59E0B]" /> Tốc Độ</span>
-            <span className="font-mono bg-black/40 px-1.5 py-0.5 rounded border border-white/10 text-[10px]">{conditions.speed} km/h</span>
+            <EditableBadge
+              value={conditions.speed}
+              unit="km/h"
+              min={30}
+              max={120}
+              step={10}
+              onChange={(val) => setConditions({...conditions, speed: val})}
+            />
           </div>
           <input 
             type="range" 
@@ -24,13 +96,21 @@ export default function ConditionPanel({ conditions, setConditions, locationName
           />
         </div>
         
+        {/* Temperature */}
         <div>
-          <div className="flex justify-between text-xs mb-1.5 text-white/80 font-medium items-center">
+          <div className="flex justify-between text-[11px] md:text-xs mb-1.5 text-white/70 font-medium items-center">
             <span className="flex items-center gap-1.5 min-w-0">
               <Thermometer className="w-3.5 h-3.5 text-[#1464F4] shrink-0" />
               <span className="truncate">Nhiệt Độ Ngoài Trời{locationName ? ` (${locationName})` : ''}</span>
             </span>
-            <span className="font-mono bg-black/40 px-1.5 py-0.5 rounded border border-white/10 text-[10px]">{conditions.temperature} °C</span>
+            <EditableBadge
+              value={conditions.temperature}
+              unit="°C"
+              min={-10}
+              max={50}
+              step={1}
+              onChange={(val) => setConditions({...conditions, temperature: val})}
+            />
           </div>
           <input 
             type="range" 
@@ -43,6 +123,7 @@ export default function ConditionPanel({ conditions, setConditions, locationName
           />
         </div>
         
+        {/* AC Toggle */}
         <label className="flex items-center gap-2.5 p-2 bg-black/30 border border-white/5 rounded-lg cursor-pointer hover:bg-black/40 transition-colors">
           <div className="relative">
              <input 

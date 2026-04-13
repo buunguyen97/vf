@@ -45,12 +45,25 @@ async function importKmlStations() {
       const longitude = parseFloat(coordsMatch[1]);
       const latitude = parseFloat(coordsMatch[2]);
       
+      // Try to parse power from description (e.g. "10 cổng 20KW 16 cổng 11KW")
+      let power_kw = 60; // default fallback
+      if (descMatch) {
+        const rawText = descMatch[1] || descMatch[2] || "";
+        // Find all power values like "20KW", "60kW", "150 kW"
+        const powerMatches = rawText.match(/(\d+)\s*[kK][wW]/g);
+        if (powerMatches && powerMatches.length > 0) {
+          // Extract the maximum power value
+          const powerValues = powerMatches.map(m => parseInt(m.match(/(\d+)/)[1]));
+          power_kw = Math.max(...powerValues);
+        }
+      }
+
       placemarks.push({
         name,
         address,
         latitude,
         longitude,
-        power_kw: 60, // Default fallback
+        power_kw,
         city: 'Vietnam'
       });
     }

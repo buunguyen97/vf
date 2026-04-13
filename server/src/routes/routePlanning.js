@@ -37,6 +37,7 @@ router.post('/optimal-route', async (req, res) => {
       batteryPercent: 100,
       batteryCapacityKwh: vehicle.battery_capacity_kwh,
       baseConsumption: vehicle.base_consumption_wh_km,
+      consumptionOverride: conditions?.consumptionWhKm || null,
       temperature: conditions?.temperature || 32,
       speed: conditions?.speed || 60,
       acOn: conditions?.acOn !== undefined ? conditions.acOn : true
@@ -178,6 +179,45 @@ router.post('/optimal-route', async (req, res) => {
       currentBatteryPct = chargeToPercent; // Assume charging to 90%
     }
 
+    // ============================================================
+    // PASS 3: Emergency — Battery too low? Find nearest station!
+    // ============================================================
+    const maxRangeFromStart = batteryPctToKm(currentBattery - minBatteryPct);
+    const canReachDestination = maxRangeFromStart >= totalDistanceKm;
+    let emergencyStation = null;
+    let insufficientBattery = false;
+
+    if (optimalStations.length === 0 && !canReachDestination) {
+      // Battery is too low to reach destination and no route station was reachable.
+      // Find the NEAREST charging station from origin (regardless of route).
+      insufficientBattery = true;
+
+      let nearestDist = Infinity;
+      for (const st of allDbStations) {
+        const dist = getDistance(origin[0], origin[1], st.latitude, st.longitude) * 1.3; // driving estimate
+        const batteryNeeded = kmToBatteryPct(dist);
+        const batteryOnArrival = currentBattery - batteryNeeded;
+
+        if (dist < nearestDist && batteryOnArrival >= 0) {
+          nearestDist = dist;
+          emergencyStation = {
+            ...st,
+            distanceFromStartKm: Math.round(dist * 10) / 10,
+            batteryAtStation: Math.max(0, Math.round(batteryOnArrival)),
+            isEmergency: true,
+            isOptimal: true,
+          };
+        }
+      }
+
+      if (emergencyStation) {
+        optimalStations.push(emergencyStation);
+        console.log(`[RoutePlanner] Emergency: nearest station "${emergencyStation.name}" at ${nearestDist.toFixed(1)}km, battery on arrival: ${emergencyStation.batteryAtStation}%`);
+      } else {
+        console.warn(`[RoutePlanner] Emergency: NO reachable station at all with ${currentBattery}% battery!`);
+      }
+    }
+
     // Calculate battery at each route station for display
     const displayStations = allRouteStations.map(st => {
       const distFromStart = st.distanceFromStartKm;
@@ -206,7 +246,9 @@ router.post('/optimal-route', async (req, res) => {
         totalDistanceKm: Math.round(totalDistanceKm),
         polylineCoords,
         allRouteStations: displayStations,
-        optimalStations
+        optimalStations,
+        insufficientBattery,
+        emergencyStation: emergencyStation || null,
     });
 
   } catch (error) {

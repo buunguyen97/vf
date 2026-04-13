@@ -5,9 +5,9 @@ const { estimateRange } = require('../services/rangeEngine');
 
 router.post('/estimate-range', (req, res) => {
   try {
-    const { batteryPercent, vehicleId, temperature, speed, acOn } = req.body;
+    const { batteryPercent, vehicleId, temperature, speed, acOn, consumptionWhKm } = req.body;
 
-    if (!batteryPercent || !vehicleId) {
+    if (batteryPercent === undefined || batteryPercent === null || !vehicleId) {
       return res.status(400).json({ error: 'batteryPercent and vehicleId are required' });
     }
 
@@ -22,6 +22,7 @@ router.post('/estimate-range', (req, res) => {
       batteryPercent,
       batteryCapacityKwh: vehicle.battery_capacity_kwh,
       baseConsumption: vehicle.base_consumption_wh_km,
+      consumptionOverride: consumptionWhKm || null,
       temperature: temperature || 25,
       speed: speed || 60,
       acOn: acOn !== undefined ? acOn : true

@@ -4,6 +4,7 @@ import BatteryInput from './components/range/BatteryInput'
 import TargetBatteryInput from './components/range/TargetBatteryInput'
 import VehicleSelector from './components/range/VehicleSelector'
 import ConditionPanel from './components/range/ConditionPanel'
+import ConsumptionPanel from './components/range/ConsumptionPanel'
 import RangeDisplay from './components/range/RangeDisplay'
 import MapView from './components/map/MapView'
 import LocationSearch from './components/map/LocationSearch'
@@ -22,7 +23,8 @@ function App() {
   const [conditions, setConditions] = useState({
     speed: 60,
     temperature: 32,
-    acOn: true
+    acOn: true,
+    consumptionWhKm: null // Set from vehicle default, user can override
   })
   
   const [estimatedRange, setEstimatedRange] = useState(0)
@@ -42,6 +44,31 @@ function App() {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [locationName, setLocationName] = useState('')
 
+  // Fetch weather + city name for any lat/lon
+  const fetchWeatherForLocation = (lat, lon) => {
+    // Fetch real outdoor temperature from Open-Meteo
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.current_weather?.temperature !== undefined) {
+          const realTemp = Math.round(data.current_weather.temperature);
+          setConditions(prev => ({ ...prev, temperature: realTemp }));
+        }
+      })
+      .catch(() => {});
+
+    // Reverse geocode to get city name
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10&accept-language=vi`)
+      .then(res => res.json())
+      .then(data => {
+        const addr = data.address || {};
+        let name = addr.state || addr.city || addr.town || addr.county || '';
+        name = name.replace(/^Thành phố\s+/i, 'TP. ');
+        if (name) setLocationName(name);
+      })
+      .catch(() => {});
+  };
+
   // Geolocation helper
   const acquireCurrentLocation = () => {
     if ("geolocation" in navigator) {
@@ -51,34 +78,18 @@ function App() {
           const lon = position.coords.longitude;
           setUserLocation([lat, lon]);
           setGeoResolved(true);
-
-          // Fetch real outdoor temperature from Open-Meteo
-          fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`)
-            .then(res => res.json())
-            .then(data => {
-              if (data.current_weather?.temperature !== undefined) {
-                const realTemp = Math.round(data.current_weather.temperature);
-                setConditions(prev => ({ ...prev, temperature: realTemp }));
-              }
-            })
-            .catch(() => {});
-
-          // Reverse geocode to get city name
-          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10&accept-language=vi`)
-            .then(res => res.json())
-            .then(data => {
-              // In Vietnam, major cities (HCM, Hanoi) are "state" level in Nominatim
-              const addr = data.address || {};
-              let name = addr.state || addr.city || addr.town || addr.county || '';
-              // Shorten "Thành phố Hồ Chí Minh" → "TP. Hồ Chí Minh"
-              name = name.replace(/^Thành phố\s+/i, 'TP. ');
-              if (name) setLocationName(name);
-            })
-            .catch(() => {});
+          fetchWeatherForLocation(lat, lon);
         },
         () => console.log('Location fallback allowed.')
       );
     }
+  };
+
+  // Handler for when user manually selects a departure location
+  const handleOriginSelect = (coords) => {
+    setUserLocation(coords);
+    setGeoResolved(false); // Not GPS anymore
+    fetchWeatherForLocation(coords[0], coords[1]);
   };
 
   // Initialization
@@ -88,12 +99,23 @@ function App() {
         setVehicles(data)
         if (data.length > 0) {
           setSelectedVehicleId(data[0].id)
+          // Set default consumption from first vehicle
+          setConditions(prev => ({ ...prev, consumptionWhKm: data[0].base_consumption_wh_km }))
         }
       })
       .catch(err => console.error(err))
       
     acquireCurrentLocation();
   }, [])
+
+  // When vehicle changes, update consumption to that vehicle's default
+  useEffect(() => {
+    if (!selectedVehicleId || vehicles.length === 0) return;
+    const vehicle = vehicles.find(v => v.id === selectedVehicleId);
+    if (vehicle) {
+      setConditions(prev => ({ ...prev, consumptionWhKm: vehicle.base_consumption_wh_km }));
+    }
+  }, [selectedVehicleId])
 
   // Range Calculator
   useEffect(() => {
@@ -197,52 +219,63 @@ function App() {
           <div className="flex-1 w-full h-full md:bg-black/50 md:backdrop-blur-3xl flex flex-col overflow-hidden relative">
              <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-[#1464F4]/5 to-transparent pointer-events-none"></div>
              
-             <div className="flex-1 overflow-y-auto px-3 md:px-4 pb-6 space-y-3 hide-scrollbar pt-3 md:pt-4 relative z-10">
-                <LocationSearch 
-                  title="Điểm Xuất Phát" 
-                  placeholder="Vị trí hiện tại..." 
-                  iconColor="#00B14F"
-                  onLocationSelect={setUserLocation}
-                  defaultDisplay={geoResolved ? '📍 Vị trí hiện tại của bạn' : ''}
-                  showLocateButton={true}
-                  onLocateMe={acquireCurrentLocation}
-                />
-                
-                <LocationSearch 
-                  title="Ghim Tọa Độ Điểm Đến" 
-                  placeholder="Tên địa danh..." 
-                  iconColor="#1464F4"
-                  onLocationSelect={setDestination} 
-                />
-                
-                <BatteryInput 
-                  batteryPercent={batteryPercent} 
-                  setBatteryPercent={setBatteryPercent} 
-                />
-                
-                <TargetBatteryInput 
-                  targetBatteryPercent={targetBatteryPercent}
-                  setTargetBatteryPercent={setTargetBatteryPercent}
-                />
-                
+             <div className="flex-1 overflow-y-auto px-3 md:px-4 pb-6 space-y-2 hide-scrollbar pt-3 md:pt-4 relative z-10">
+                {/* 1. Chọn xe */}
                 <VehicleSelector 
                   vehicles={vehicles} 
                   selectedVehicleId={selectedVehicleId} 
                   onSelect={setSelectedVehicleId} 
                 />
                 
+                {/* 2. Mức pin hiện tại */}
+                <BatteryInput 
+                  batteryPercent={batteryPercent} 
+                  setBatteryPercent={setBatteryPercent} 
+                />
+
+                {/* 3. Tiêu hao điện (km/1%) */}
+                <ConsumptionPanel 
+                  conditions={conditions} 
+                  setConditions={setConditions}
+                  vehicles={vehicles}
+                  selectedVehicleId={selectedVehicleId}
+                />
+
+                {/* 4. Kết quả phạm vi */}
+                <RangeDisplay range={estimatedRange} loading={isCalculating} />
+
+                {/* 5. Điểm xuất phát */}
+                <LocationSearch 
+                  title="Điểm Xuất Phát" 
+                  placeholder="Vị trí hiện tại..." 
+                  iconColor="#00B14F"
+                  onLocationSelect={handleOriginSelect}
+                  defaultDisplay={geoResolved ? '📍 Vị trí hiện tại của bạn' : ''}
+                  showLocateButton={true}
+                  onLocateMe={acquireCurrentLocation}
+                />
+                
+                {/* 6. Điểm đến */}
+                <LocationSearch 
+                  title="Ghim Tọa Độ Điểm Đến" 
+                  placeholder="Tên địa danh..." 
+                  iconColor="#1464F4"
+                  onLocationSelect={setDestination} 
+                />
+
+                {/* 7. Pin lịch trình target */}
+                <TargetBatteryInput 
+                  targetBatteryPercent={targetBatteryPercent}
+                  setTargetBatteryPercent={setTargetBatteryPercent}
+                />
+
+                {/* 8. Điều kiện lái xe (nâng cao) */}
                 <ConditionPanel 
                   conditions={conditions} 
                   setConditions={setConditions}
                   locationName={locationName}
                 />
-                
-                {routeData && routeData.optimalStations && (
-                  <RouteItinerary 
-                     stations={routeData.optimalStations} 
-                     onStationSelect={handleStationSelect} 
-                  />
-                )}
+
              </div>
           </div>
         </div>
@@ -250,11 +283,17 @@ function App() {
         {/* Main Map Area */}
         <div className="flex-1 w-full h-full relative z-[100] bg-gray-950">
           
-          {/* Floating Range Component - Transparent over Map (Desktop) */}
-          <div className="absolute top-4 left-4 z-[400] pointer-events-none hidden md:block w-[320px]">
-             <RangeDisplay range={estimatedRange} loading={isCalculating} />
-          </div>
-          
+          {/* Floating Route Itinerary over Map (Desktop) */}
+          {routeData && routeData.optimalStations && (
+            <div className="absolute top-3 left-3 z-[400] hidden md:block w-[340px] max-h-[calc(100%-24px)] overflow-y-auto hide-scrollbar pointer-events-auto">
+              <RouteItinerary 
+                stations={routeData.optimalStations} 
+                onStationSelect={handleStationSelect}
+                insufficientBattery={routeData.insufficientBattery}
+              />
+            </div>
+          )}
+
           {/* Mobile Mini Range indicator when map is focused */}
           <div className="absolute top-4 left-4 z-[400] md:hidden pointer-events-none">
              <div className="bg-black/80 backdrop-blur border border-green-500/30 text-white p-3 rounded-2xl shadow-xl flex items-center gap-3">
@@ -263,7 +302,7 @@ function App() {
                ) : (
                   <div className="text-xl font-bold bg-[#00B14F] px-2 py-0.5 rounded text-black">{estimatedRange} <span className="text-sm">km</span></div>
                )}
-               <span className="text-xs text-gray-300 max-w-[100px] leading-tight flex-wrap">Phạm vi định mức ước tính</span>
+               <span className="text-xs text-gray-300 max-w-[100px] leading-tight flex-wrap">Km có thể đi được</span>
              </div>
           </div>
 

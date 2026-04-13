@@ -5,7 +5,7 @@ const { estimateRange } = require('../services/rangeEngine');
 
 router.post('/check-reachability', async (req, res) => {
   try {
-    const { currentLocation, destination, batteryPercent, vehicleId, temperature, speed, acOn } = req.body;
+    const { currentLocation, destination, batteryPercent, vehicleId, temperature, speed, acOn, consumptionWhKm } = req.body;
 
     if (!currentLocation || !destination || !batteryPercent || !vehicleId) {
       return res.status(400).json({ error: 'currentLocation, destination, batteryPercent and vehicleId are required' });
@@ -23,6 +23,7 @@ router.post('/check-reachability', async (req, res) => {
       batteryPercent,
       batteryCapacityKwh: vehicle.battery_capacity_kwh,
       baseConsumption: vehicle.base_consumption_wh_km,
+      consumptionOverride: consumptionWhKm || null,
       temperature: temperature || 25,
       speed: speed || 60,
       acOn: acOn !== undefined ? acOn : true
