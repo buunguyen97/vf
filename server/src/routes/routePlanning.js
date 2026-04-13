@@ -75,25 +75,28 @@ router.post('/optimal-route', async (req, res) => {
     const foundStationIds = new Set();
     let cumulativeDistance = 0;
 
+    // Tighter radius: prefer stations very close to route
+    const MAX_DETOUR_KM = 3; // Only stations within 3km of route
+
     for (let i = 0; i < polylineCoords.length - 1; i++) {
       const p1 = polylineCoords[i];
       const p2 = polylineCoords[i + 1];
       const segDist = getDistance(p1[0], p1[1], p2[0], p2[1]);
       cumulativeDistance += segDist;
 
-      // Check every ~5 points to save CPU
-      if (i % 5 !== 0 && i !== polylineCoords.length - 2) continue;
+      // Check every 3 points for better accuracy
+      if (i % 3 !== 0 && i !== polylineCoords.length - 2) continue;
 
       for (const st of allDbStations) {
         if (foundStationIds.has(st.id)) continue;
 
         const distToRoute = getDistance(p1[0], p1[1], st.latitude, st.longitude);
-        if (distToRoute <= 5) { // Within 5km of route
+        if (distToRoute <= MAX_DETOUR_KM) {
           foundStationIds.add(st.id);
           allRouteStations.push({
             ...st,
             distanceFromStartKm: Math.round((cumulativeDistance + distToRoute) * 10) / 10,
-            detourKm: Math.round(distToRoute * 10) / 10,
+            detourKm: Math.round(distToRoute * 100) / 100, // More precise detour
           });
         }
       }
@@ -103,47 +106,42 @@ router.post('/optimal-route', async (req, res) => {
     allRouteStations.sort((a, b) => a.distanceFromStartKm - b.distanceFromStartKm);
 
     // ============================================================
-    // PASS 2: Greedy "Gas Station" Algorithm
+    // PASS 2: Greedy "Gas Station" Algorithm with On-Route Priority
     // ============================================================
-    // Strategy: Drive as far as possible. Only charge when you MUST 
-    // (i.e., you can't reach the next station or destination without charging).
-    // When choosing where to charge, pick the FARTHEST reachable station.
-    // This minimizes total stops.
+    // Strategy: Drive as far as possible. When selecting a charging station,
+    // use a scoring system that balances:
+    //   - Distance progress (go as far as possible → fewer stops)
+    //   - Route proximity (prefer stations ON the road, not off-route)
+    //   - Charging power (prefer fast chargers for shorter stops)
     // ============================================================
 
     const optimalStations = [];
     let currentBatteryPct = currentBattery;
     let currentPositionKm = 0;
-    // Soft floor: target ±5% flexibility
-    // e.g., target 25% → hard floor 20%, arrival battery ~20-30%
     const minBatteryPct = Math.max(targetBattery - 5, 5); 
-    const chargeToPercent = 90; // Charge up to 90% at each stop
+    const chargeToPercent = 90;
 
-    // Filter route stations to only those reachable (positive battery remaining)
     const candidateStations = allRouteStations.filter(st => {
-      // Must be reachable from origin with full starting battery
       return st.distanceFromStartKm < totalDistanceKm;
     });
 
-    let safetyCounter = 0; // Prevent infinite loop
+    let safetyCounter = 0;
     const maxStops = 20;
 
     while (safetyCounter < maxStops) {
       safetyCounter++;
 
-      // How far can we go from current position with current battery?
       const maxRangeKm = batteryPctToKm(currentBatteryPct - minBatteryPct);
       const maxReachableKm = currentPositionKm + maxRangeKm;
 
       // Can we reach the destination?
       if (maxReachableKm >= totalDistanceKm) {
-        // We can make it without charging! 
         break;
       }
 
-      // We CAN'T reach the destination. Find the FARTHEST station we can reach.
-      // This is the greedy choice — go as far as possible before stopping.
+      // Find best station using scoring
       let bestStation = null;
+      let bestScore = -Infinity;
       let bestStationIdx = -1;
 
       for (let i = 0; i < candidateStations.length; i++) {
@@ -158,14 +156,22 @@ router.post('/optimal-route', async (req, res) => {
         const batteryOnArrival = currentBatteryPct - batteryNeeded;
 
         if (batteryOnArrival >= minBatteryPct) {
-          // We can reach this station — keep looking for a farther one
-          bestStation = { ...st, batteryAtStation: Math.round(batteryOnArrival) };
-          bestStationIdx = i;
+          // SCORING: balance distance progress, route proximity, and power
+          const progressScore = (st.distanceFromStartKm / totalDistanceKm) * 100; // 0-100
+          const detourPenalty = st.detourKm * 15; // Heavy penalty for off-route (each km detour = -15 points)
+          const powerBonus = Math.min(st.power_kw / 10, 15); // Up to 15 bonus for fast chargers
+          
+          const score = progressScore - detourPenalty + powerBonus;
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestStation = { ...st, batteryAtStation: Math.round(batteryOnArrival) };
+            bestStationIdx = i;
+          }
         }
       }
 
       if (!bestStation) {
-        // No reachable station found — we're stuck. Break to avoid infinite loop.
         console.warn(`[RoutePlanner] No reachable station from km ${currentPositionKm.toFixed(1)}, battery ${currentBatteryPct.toFixed(1)}%`);
         break;
       }
@@ -176,7 +182,7 @@ router.post('/optimal-route', async (req, res) => {
 
       // Update position and battery
       currentPositionKm = bestStation.distanceFromStartKm;
-      currentBatteryPct = chargeToPercent; // Assume charging to 90%
+      currentBatteryPct = chargeToPercent;
     }
 
     // ============================================================
