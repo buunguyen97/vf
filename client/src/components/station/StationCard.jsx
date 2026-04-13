@@ -18,6 +18,13 @@ export default function StationCard({ station, reachability, onClose }) {
   const [loadingAmenities, setLoadingAmenities] = useState(false);
   const [showAmenities, setShowAmenities] = useState(false);
 
+  // Reset amenities when station changes
+  useEffect(() => {
+    setAmenities(null);
+    setShowAmenities(false);
+    setLoadingAmenities(false);
+  }, [station?.id, station?.latitude, station?.longitude]);
+
   const loadAmenities = async () => {
     if (amenities) {
       setShowAmenities(!showAmenities);

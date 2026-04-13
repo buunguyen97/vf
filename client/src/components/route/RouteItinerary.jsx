@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MapPin, Zap, Flag, Coffee, UtensilsCrossed, ChevronDown, ChevronUp, ExternalLink, Loader2, ShoppingBag, Store } from 'lucide-react';
 import { evApi } from '../../services/api';
 
@@ -38,6 +38,12 @@ function AmenityList({ station }) {
   const [amenities, setAmenities] = useState(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
+
+  // Reset when station changes
+  useEffect(() => {
+    setAmenities(null);
+    setExpanded(false);
+  }, [station.id, station.latitude, station.longitude]);
 
   const loadAmenities = async () => {
     if (amenities) {
