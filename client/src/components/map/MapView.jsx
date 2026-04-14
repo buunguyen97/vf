@@ -65,20 +65,25 @@ function MapFitter({ routeCoords }) {
   return null;
 }
 
-// Map Event to capture clicks for destination setting
+// Map Event to capture double-clicks for destination setting
 function MapClickHandler({ setDestination }) {
   useMapEvents({
-    contextmenu(e) {
-      // Right click to set destination
-      setDestination([e.latlng.lat, e.latlng.lng]);
-    },
-    click(e) {
-      // Normal click can also set destination if they want, but let's stick to simple click 
-      // just so it works easily on mobile too without long press issues in testing.
-      // But it might conflict with popup.
+    dblclick(e) {
+      // Double click to set destination (prevents accidental pins)
       setDestination([e.latlng.lat, e.latlng.lng]);
     }
   });
+  return null;
+}
+
+// Fly to a specific location when focusCoords changes
+function MapFlyTo({ coords }) {
+  const map = useMap();
+  useEffect(() => {
+    if (coords) {
+      map.flyTo(coords, 15, { duration: 1.2 });
+    }
+  }, [coords, map]);
   return null;
 }
 
@@ -90,7 +95,8 @@ export default function MapView({
   routeData,
   setDestination,
   destination,
-  geoResolved
+  geoResolved,
+  focusCoords
 }) {
   const [ambientStations, setAmbientStations] = useState([]);
   const lastFetchRef = useRef(null);
@@ -148,7 +154,7 @@ export default function MapView({
       {/* Help Overlay */}
       {geoResolved && !destination && (
          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] bg-black/80 text-white text-xs px-4 py-2 rounded-full border border-gray-700 animate-pulse pointer-events-none">
-            Click hoặc bấm giữ trên bản đồ để chọn Điểm Đến
+            Double click trên bản đồ để chọn Điểm Đến
          </div>
       )}
 
@@ -157,6 +163,7 @@ export default function MapView({
         zoom={11} 
         style={{ height: '100%', width: '100%', backgroundColor: '#0f172a' }}
         zoomControl={false}
+        doubleClickZoom={false}
       >
         <TileLayer
           attribution='&copy; OpenStreetMap'
@@ -164,6 +171,7 @@ export default function MapView({
         />
         
         <MapClickHandler setDestination={setDestination} />
+        <MapFlyTo coords={focusCoords} />
 
         {userLocation && (
           <>

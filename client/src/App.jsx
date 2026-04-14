@@ -39,6 +39,7 @@ function App() {
 
   const [selectedStation, setSelectedStation] = useState(null)
   const [reachability, setReachability] = useState(null)
+  const [focusCoords, setFocusCoords] = useState(null)
   
   // Mobile UX State
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -166,6 +167,8 @@ function App() {
   const handleStationSelect = (station) => {
     setSelectedStation(station);
     setSheetOpen(false); // Hide sheet to look at card
+    // Focus map on this station
+    setFocusCoords([station.latitude, station.longitude]);
     
     // If station already has batteryAtStation from route planner, use it directly
     if (station.batteryAtStation !== undefined) {
@@ -240,9 +243,14 @@ function App() {
                   vehicles={vehicles}
                   selectedVehicleId={selectedVehicleId}
                 />
+                {/* 7. Pin lịch trình target */}
+                <TargetBatteryInput 
+                  targetBatteryPercent={targetBatteryPercent}
+                  setTargetBatteryPercent={setTargetBatteryPercent}
+                />
 
-                {/* 4. Kết quả phạm vi */}
-                <RangeDisplay range={estimatedRange} loading={isCalculating} />
+                {/* 4. Kết quả phạm vi (ẩn theo yêu cầu) */}
+                {/* <RangeDisplay range={estimatedRange} loading={isCalculating} /> */}
 
                 {/* 5. Điểm xuất phát */}
                 <LocationSearch 
@@ -261,12 +269,6 @@ function App() {
                   placeholder="Tên địa danh..." 
                   iconColor="#1464F4"
                   onLocationSelect={setDestination} 
-                />
-
-                {/* 7. Pin lịch trình target */}
-                <TargetBatteryInput 
-                  targetBatteryPercent={targetBatteryPercent}
-                  setTargetBatteryPercent={setTargetBatteryPercent}
                 />
 
                 {/* 8. Điều kiện lái xe (nâng cao) */}
@@ -288,6 +290,7 @@ function App() {
             <div className="absolute top-3 left-3 z-[400] hidden md:block w-[340px] max-h-[calc(100%-24px)] overflow-y-auto hide-scrollbar pointer-events-auto">
               <RouteItinerary 
                 stations={routeData.optimalStations} 
+                chargingStops={routeData.chargingStops}
                 onStationSelect={handleStationSelect}
                 insufficientBattery={routeData.insufficientBattery}
               />
@@ -317,10 +320,10 @@ function App() {
           </div>
 
           {isRouting && (
-            <div className="absolute inset-0 bg-black/60 z-[2000] flex items-center justify-center backdrop-blur-sm">
-                <div className="text-white text-sm bg-black/80 px-6 py-4 rounded-full flex gap-3 items-center border border-white/10 shadow-[0_0_30px_rgba(20,100,244,0.5)] font-bold">
-                  <div className="w-5 h-5 border-4 border-[#1464F4] border-t-transparent rounded-full animate-spin"></div> 
-                  Quét chặng qua OSRM & Đề xuất trạm VinFast...
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[2000] pointer-events-none">
+                <div className="text-white text-xs bg-black/90 backdrop-blur-lg px-5 py-3 rounded-full flex gap-3 items-center border border-[#1464F4]/30 shadow-[0_0_30px_rgba(20,100,244,0.4)] font-bold">
+                  <div className="w-4 h-4 border-3 border-[#1464F4] border-t-transparent rounded-full animate-spin"></div> 
+                  Đang tính lộ trình...
                 </div>
             </div>
           )}
@@ -333,6 +336,7 @@ function App() {
             geoResolved={geoResolved}
             routeData={routeData}
             destination={destination}
+            focusCoords={focusCoords}
             setDestination={(dest) => {
               setDestination(dest);
               setSheetOpen(false); // Map clicked, hide sheet

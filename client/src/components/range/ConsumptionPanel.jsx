@@ -116,7 +116,7 @@ export default function ConsumptionPanel({ conditions, setConditions, vehicles, 
       {/* Header */}
       <div className="flex justify-between items-center mb-2.5">
         <h2 className="text-[11px] md:text-xs font-bold text-white/80 uppercase tracking-wide flex items-center gap-1.5">
-          <Zap className="w-3.5 h-3.5 text-[#00B14F]" /> Km đi được với <span className="text-[#00B14F] text-xs md:text-sm font-black">1%</span> pin
+          <Zap className="w-3.5 h-3.5 text-[#00B14F]" /> Số Km đi được với <span className="text-[#00B14F] text-xs md:text-sm font-black">1%</span> pin
         </h2>
         <EditableBadge
           value={isDragging.current ? sliderValue : kmPer1Percent}

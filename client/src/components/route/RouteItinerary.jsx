@@ -148,32 +148,196 @@ function AmenityList({ station }) {
   );
 }
 
-export default function RouteItinerary({ stations, onStationSelect, insufficientBattery }) {
-  if (!stations || stations.length === 0) return null;
+export default function RouteItinerary({ stations, chargingStops, onStationSelect, insufficientBattery }) {
+  const [expandedStops, setExpandedStops] = useState({});
+  const [collapsed, setCollapsed] = useState(false);
 
-  return (
-    <div className="bg-[#0A0A0A]/95 backdrop-blur-xl rounded-2xl p-4 border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden shrink-0 relative">
-      {/* Decorative gradient */}
-      <div className={`absolute top-0 right-0 w-32 h-32 ${insufficientBattery ? 'bg-[#DA303E]/15' : 'bg-[#00B14F]/10'} blur-[40px] pointer-events-none`}></div>
+  const hasStops = chargingStops && chargingStops.length > 0;
+  const hasLegacyStations = stations && stations.length > 0;
 
-      {/* Emergency Warning Banner */}
-      {insufficientBattery && (
-        <div className="bg-gradient-to-r from-[#DA303E]/20 to-[#DA303E]/10 border border-[#DA303E]/30 rounded-xl p-3 mb-4 relative z-10 animate-pulse">
-          <div className="flex items-start gap-2">
-            <span className="text-lg shrink-0 mt-0.5">⚠️</span>
-            <div>
-              <p className="text-[11px] font-bold text-[#DA303E] uppercase tracking-wide">Pin Không Đủ Đến Điểm Đến</p>
-              <p className="text-[10px] text-white/60 mt-1 leading-relaxed">
-                Mức pin hiện tại quá thấp để đến đích. Hãy sạc tại trạm gần nhất bên dưới trước khi tiếp tục hành trình.
-              </p>
+  if (!hasStops && !hasLegacyStations) return null;
+
+  const toggleAlternatives = (stopNumber) => {
+    setExpandedStops(prev => ({ ...prev, [stopNumber]: !prev[stopNumber] }));
+  };
+
+  // New grouped view with alternatives
+  if (hasStops) {
+    return (
+      <div className="bg-[#0A0A0A]/95 backdrop-blur-xl rounded-2xl p-4 border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden shrink-0 relative">
+        {/* Decorative gradient */}
+        <div className={`absolute top-0 right-0 w-32 h-32 ${insufficientBattery ? 'bg-[#DA303E]/15' : 'bg-[#00B14F]/10'} blur-[40px] pointer-events-none`}></div>
+
+        {/* Emergency Warning Banner */}
+        {insufficientBattery && !collapsed && (
+          <div className="bg-gradient-to-r from-[#DA303E]/20 to-[#DA303E]/10 border border-[#DA303E]/30 rounded-xl p-3 mb-4 relative z-10 animate-pulse">
+            <div className="flex items-start gap-2">
+              <span className="text-lg shrink-0 mt-0.5">⚠️</span>
+              <div>
+                <p className="text-[11px] font-bold text-[#DA303E] uppercase tracking-wide">Pin Không Đủ Đến Điểm Đến</p>
+                <p className="text-[10px] text-white/60 mt-1 leading-relaxed">
+                  Mức pin hiện tại quá thấp để đến đích. Hãy sạc tại trạm gần nhất bên dưới trước khi tiếp tục hành trình.
+                </p>
+              </div>
             </div>
           </div>
+        )}
+
+        {/* Collapsible Header */}
+        <div 
+          className="flex items-center justify-between cursor-pointer relative z-10"
+          onClick={() => setCollapsed(!collapsed)}
+        >
+          <h2 className={`text-[11px] font-black text-white/90 uppercase tracking-[0.2em] flex items-center gap-2 ${collapsed ? '' : 'mb-5'}`}>
+             <Zap className={`w-4 h-4 ${insufficientBattery ? 'text-[#DA303E]' : 'text-[#00B14F]'}`} />
+             {insufficientBattery ? '⚡ Sạc Khẩn Cấp' : 'Lộ Trình Tối Ưu'}
+             <span className="text-[9px] font-bold bg-white/10 text-white/50 px-1.5 py-0.5 rounded-full ml-1">
+               {chargingStops.length} trạm
+             </span>
+          </h2>
+          <div className={`text-white/40 hover:text-white/70 transition-all ${collapsed ? '' : 'mb-5'}`}>
+            {collapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+          </div>
         </div>
-      )}
+        
+        {!collapsed && (
+        <div className="space-y-0 relative z-10 before:absolute before:top-4 before:bottom-4 before:left-[11px] before:w-px before:bg-gradient-to-b before:from-[#1464F4]/50 before:via-[#00B14F]/50 before:to-transparent">
+          {chargingStops.map((stop) => {
+            const recommended = stop.stations[0];
+            const alternatives = stop.stations.slice(1);
+            const isExpanded = expandedStops[stop.stopNumber];
+
+            return (
+              <div key={stop.stopNumber} className="mb-1">
+                {/* Recommended Station */}
+                <div 
+                  className="flex gap-4 group cursor-pointer p-2 rounded-xl transition-all hover:bg-white/5 hover:translate-x-1"
+                  onClick={() => onStationSelect(recommended)}
+                >
+                  {/* Timeline Dot */}
+                  <div className="flex flex-col items-center shrink-0 mt-1">
+                    <div className="w-6 h-6 rounded-full bg-[#00B14F] border-2 border-[#00B14F]/50 flex items-center justify-center text-white text-xs font-black z-10 shadow-[0_0_15px_rgba(0,177,79,0.4)]">
+                      {stop.stopNumber}
+                    </div>
+                  </div>
+
+                  {/* Station info */}
+                  <div className="pb-2 w-full relative">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="text-[8px] font-black uppercase tracking-widest text-[#00B14F] bg-[#00B14F]/10 px-1.5 py-0.5 rounded border border-[#00B14F]/20">★ Khuyên dùng</span>
+                    </div>
+                    <h3 className="font-bold text-white/90 text-sm leading-tight group-hover:text-white transition-colors">
+                      {recommended.name}
+                    </h3>
+                    <p className="text-xs text-white/40 mt-1 line-clamp-1 group-hover:text-white/60 transition-colors">{recommended.address}</p>
+                    
+                    <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+                      <span className="text-[10px] font-bold tracking-wider uppercase bg-white/10 text-white/70 px-2 py-0.5 rounded border border-white/5">
+                        Km {Math.round(recommended.distanceFromStartKm || 0)}
+                      </span>
+                      <span className="text-[10px] font-bold bg-gradient-to-r from-[#00B14F]/20 to-[#20C997]/20 text-[#20C997] px-2 py-0.5 rounded shadow-[inset_0_0_10px_rgba(0,177,79,0.1)] border border-[#00B14F]/20">
+                        Pin còn: {recommended.batteryAtStation}%
+                      </span>
+                      <span className="text-[10px] font-bold bg-[#1464F4]/15 text-[#1464F4] px-2 py-0.5 rounded border border-[#1464F4]/20">
+                        {recommended.power_kw} kW
+                      </span>
+                      {recommended.detourKm > 0.05 && (
+                        <span className="text-[10px] font-bold bg-[#F59E0B]/15 text-[#F59E0B] px-2 py-0.5 rounded border border-[#F59E0B]/20">
+                          ↗ {recommended.detourKm < 1 ? `${Math.round(recommended.detourKm * 1000)}m` : `${recommended.detourKm.toFixed(1)}km`}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Nearby amenities */}
+                    <AmenityList station={recommended} />
+                  </div>
+                </div>
+
+                {/* Alternatives Toggle */}
+                {alternatives.length > 0 && (
+                  <div className="ml-10 mb-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleAlternatives(stop.stopNumber); }}
+                      className="flex items-center gap-1.5 text-[10px] font-semibold text-white/40 hover:text-white/70 transition-colors cursor-pointer group/alt"
+                    >
+                      <MapPin className="w-3 h-3 group-hover/alt:text-[#1464F4] transition-colors" />
+                      {alternatives.length} trạm thay thế khác
+                      {isExpanded ? (
+                        <ChevronUp className="w-3 h-3" />
+                      ) : (
+                        <ChevronDown className="w-3 h-3" />
+                      )}
+                    </button>
+
+                    {isExpanded && (
+                      <div className="mt-1.5 space-y-1 border-l-2 border-white/5 pl-3">
+                        {alternatives.map((alt, altIdx) => (
+                          <div
+                            key={alt.id}
+                            className="flex gap-3 group cursor-pointer p-2 rounded-lg transition-all hover:bg-white/5"
+                            onClick={() => onStationSelect(alt)}
+                          >
+                            <div className="flex flex-col items-center shrink-0 mt-1">
+                              <div className="w-5 h-5 rounded-full bg-black border border-white/20 flex items-center justify-center text-white/50 text-[9px] font-bold z-10">
+                                {String.fromCharCode(65 + altIdx + 1)}
+                              </div>
+                            </div>
+                            <div className="w-full">
+                              <h4 className="font-semibold text-white/60 text-xs leading-tight group-hover:text-white/80 transition-colors">
+                                {alt.name}
+                              </h4>
+                              <p className="text-[10px] text-white/30 mt-0.5 line-clamp-1">{alt.address}</p>
+                              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                <span className="text-[9px] font-bold bg-white/5 text-white/50 px-1.5 py-0.5 rounded">
+                                  Km {Math.round(alt.distanceFromStartKm || 0)}
+                                </span>
+                                <span className="text-[9px] font-bold bg-[#00B14F]/10 text-[#00B14F]/80 px-1.5 py-0.5 rounded">
+                                  Pin: {alt.batteryAtStation}%
+                                </span>
+                                <span className="text-[9px] font-bold bg-[#1464F4]/10 text-[#1464F4]/80 px-1.5 py-0.5 rounded">
+                                  {alt.power_kw} kW
+                                </span>
+                                {alt.detourKm > 0.05 && (
+                                  <span className="text-[9px] font-bold bg-[#F59E0B]/10 text-[#F59E0B]/80 px-1.5 py-0.5 rounded">
+                                    ↗ {alt.detourKm < 1 ? `${Math.round(alt.detourKm * 1000)}m` : `${alt.detourKm.toFixed(1)}km`}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+           <div className="flex gap-4 group p-2 rounded-xl mt-2 opacity-60">
+             <div className="flex flex-col items-center shrink-0 mt-1">
+               <div className="w-6 h-6 rounded-full bg-[#1464F4] flex items-center justify-center z-10 shadow-[0_0_15px_rgba(20,100,244,0.5)]">
+                  <Flag className="w-3 h-3 text-white" />
+               </div>
+             </div>
+             <div className="pb-3 w-full pt-1">
+               <h3 className="font-bold text-white/90 text-sm uppercase tracking-wide">Điểm Đến</h3>
+             </div>
+           </div>
+        </div>
+        )}
+      </div>
+    );
+  }
+
+  // Legacy fallback: flat station list
+  return (
+    <div className="bg-[#0A0A0A]/95 backdrop-blur-xl rounded-2xl p-4 border border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden shrink-0 relative">
+      <div className={`absolute top-0 right-0 w-32 h-32 ${insufficientBattery ? 'bg-[#DA303E]/15' : 'bg-[#00B14F]/10'} blur-[40px] pointer-events-none`}></div>
 
       <h2 className="text-[11px] font-black text-white/90 mb-5 uppercase tracking-[0.2em] flex items-center gap-2 relative z-10">
          <Zap className={`w-4 h-4 ${insufficientBattery ? 'text-[#DA303E]' : 'text-[#00B14F]'}`} />
-         {insufficientBattery ? '⚡ Sạc Khẩn Cấp — Trạm Gần Nhất' : 'Lộ Tối Ưu (Khuyên Dùng)'}
+         Lộ Trình Tối Ưu
       </h2>
       
       <div className="space-y-0 relative z-10 before:absolute before:top-4 before:bottom-4 before:left-[11px] before:w-px before:bg-gradient-to-b before:from-[#1464F4]/50 before:via-[#00B14F]/50 before:to-transparent">
@@ -183,20 +347,16 @@ export default function RouteItinerary({ stations, onStationSelect, insufficient
             className="flex gap-4 group cursor-pointer p-2 rounded-xl transition-all hover:bg-white/5 hover:translate-x-1"
             onClick={() => onStationSelect(station)}
           >
-            {/* Timeline Line/Dot */}
             <div className="flex flex-col items-center shrink-0 mt-1">
               <div className="w-6 h-6 rounded-full bg-black border-2 border-white/20 flex items-center justify-center text-white/60 text-xs font-black z-10 shadow-[0_0_10px_rgba(0,0,0,0.5)] group-hover:border-[#00B14F] group-hover:text-[#00B14F] transition-all group-hover:shadow-[0_0_15px_rgba(0,177,79,0.4)]">
                 {idx + 1}
               </div>
             </div>
-
-            {/* Station info */}
             <div className="pb-3 w-full border-b border-white/5 group-last:border-0 relative">
               <h3 className="font-bold text-white/90 text-sm leading-tight group-hover:text-white transition-colors">
                 {station.name}
               </h3>
               <p className="text-xs text-white/40 mt-1 line-clamp-1 group-hover:text-white/60 transition-colors">{station.address}</p>
-              
               <div className="flex items-center gap-2 mt-2.5">
                 <span className="text-[10px] font-bold tracking-wider uppercase bg-white/10 text-white/70 px-2 py-0.5 rounded border border-white/5">
                   Km {Math.round(station.distanceFromStartKm || 0)}
@@ -205,23 +365,21 @@ export default function RouteItinerary({ stations, onStationSelect, insufficient
                   Dự Kiến: {station.batteryAtStation}%
                 </span>
               </div>
-
-              {/* Nearby amenities toggle */}
               <AmenityList station={station} />
             </div>
           </div>
         ))}
 
          <div className="flex gap-4 group p-2 rounded-xl mt-2 opacity-60">
-            <div className="flex flex-col items-center shrink-0 mt-1">
-              <div className="w-6 h-6 rounded-full bg-[#1464F4] flex items-center justify-center z-10 shadow-[0_0_15px_rgba(20,100,244,0.5)]">
-                 <Flag className="w-3 h-3 text-white" />
-              </div>
-            </div>
-            <div className="pb-3 w-full pt-1">
-              <h3 className="font-bold text-white/90 text-sm uppercase tracking-wide">Điểm Đến</h3>
-            </div>
-          </div>
+             <div className="flex flex-col items-center shrink-0 mt-1">
+               <div className="w-6 h-6 rounded-full bg-[#1464F4] flex items-center justify-center z-10 shadow-[0_0_15px_rgba(20,100,244,0.5)]">
+                  <Flag className="w-3 h-3 text-white" />
+               </div>
+             </div>
+             <div className="pb-3 w-full pt-1">
+               <h3 className="font-bold text-white/90 text-sm uppercase tracking-wide">Điểm Đến</h3>
+             </div>
+           </div>
       </div>
     </div>
   );

@@ -38,7 +38,7 @@ export default function TargetBatteryInput({ targetBatteryPercent, setTargetBatt
 
       <div className="flex justify-between items-center mb-2 relative z-10">
         <h2 className="text-[11px] md:text-xs font-bold tracking-wide text-white/80 uppercase flex items-center gap-1.5">
-          <Target className="w-3.5 h-3.5 text-[#1464F4]" /> Pin Lịch Trình (Target)
+          <Target className="w-3.5 h-3.5 text-[#1464F4]" /> Ngưỡng pin tối thiểu
         </h2>
         {isEditing ? (
           <div className="bg-[#1464F4]/10 border border-[#1464F4]/30 px-2 py-0.5 rounded-lg shadow-[0_0_10px_rgba(20,100,244,0.2)] flex items-center gap-1">
@@ -71,7 +71,7 @@ export default function TargetBatteryInput({ targetBatteryPercent, setTargetBatt
           type="range" 
           min="10" 
           max="50" 
-          step="5"
+          step="1"
           value={targetBatteryPercent} 
           onChange={(e) => setTargetBatteryPercent(parseInt(e.target.value))}
           className="w-full h-1.5 rounded-full appearance-none cursor-pointer outline-none bg-white/10 accent-[#1464F4]"
