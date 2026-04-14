@@ -365,6 +365,21 @@ function App() {
              </button>
           )}
 
+          {/* Floating Feedback Button */}
+          <a
+            href="https://docs.google.com/forms/d/e/1FAIpQLSeCHoKFNfFocH-MCWnM-yUSCPrR9ZtuFUvgGqNqSnOXW_L0aw/viewform"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="absolute bottom-6 right-6 z-[400]"
+          >
+            <div className="bg-gradient-to-r from-[#1464F4] to-[#0D4BC4] hover:from-[#1974FF] hover:to-[#1464F4] text-white px-5 py-3 rounded-full flex items-center gap-2.5 shadow-[0_8px_25px_rgba(20,100,244,0.5)] transition-all duration-300 hover:scale-105 active:scale-95 hover:shadow-[0_12px_35px_rgba(20,100,244,0.6)]">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+              <span className="text-xs font-bold tracking-wide">Góp ý</span>
+            </div>
+          </a>
+
           {/* Map Overlay shade to indicate Sheet is open on mobile */}
           {sheetOpen && (
             <div 
