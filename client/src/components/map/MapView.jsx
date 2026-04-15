@@ -87,6 +87,71 @@ const getChargingSpecCards = (station) => {
   return [];
 };
 
+const getReachabilitySummary = (stationReachability) => {
+  if (!stationReachability) return '';
+
+  const batteryLeftPercent = stationReachability.batteryLeftPercent;
+  const minBatteryPercent = stationReachability.minBatteryPercent;
+
+  if (batteryLeftPercent === undefined || batteryLeftPercent === null) {
+    return '';
+  }
+
+  if (minBatteryPercent === undefined || minBatteryPercent === null) {
+    return (
+      <>
+        Pin dự kiến khi đến Trạm Sạc:{' '}
+        <span className="text-[12px] font-extrabold text-slate-900">{batteryLeftPercent}%</span>.
+      </>
+    );
+  }
+
+  const sweetSpotMax = minBatteryPercent + 10;
+
+  if (batteryLeftPercent >= minBatteryPercent && batteryLeftPercent <= sweetSpotMax) {
+    return (
+      <>
+        Pin dự kiến khi đến Trạm Sạc:{' '}
+        <span className="text-[12px] font-extrabold text-slate-900">{batteryLeftPercent}%</span>{' '}
+        <span className="font-medium text-gray-600">
+          ( khoảng tối thiểu:{' '}
+          <span className="font-bold text-[#166534]">{minBatteryPercent}%</span>{' '}
+          <span className="text-gray-400">-&gt;</span>{' '}
+          <span className="font-bold text-[#166534]">{sweetSpotMax}%</span> )
+        </span>
+      </>
+    );
+  }
+
+  if (batteryLeftPercent > sweetSpotMax) {
+    return (
+      <>
+        Pin dự kiến khi đến Trạm Sạc:{' '}
+        <span className="text-[12px] font-extrabold text-slate-900">{batteryLeftPercent}%</span>{' '}
+        <span className="font-medium text-gray-600">
+          ( cao hơn khoảng tối thiểu:{' '}
+          <span className="font-bold text-[#166534]">{minBatteryPercent}%</span>{' '}
+          <span className="text-gray-400">-&gt;</span>{' '}
+          <span className="font-bold text-[#166534]">{sweetSpotMax}%</span> )
+        </span>
+      </>
+    );
+  }
+
+  return (
+    <>
+      Pin dự kiến khi đến Trạm Sạc:{' '}
+      <span className="text-[12px] font-extrabold text-slate-900">{batteryLeftPercent}%</span>{' '}
+      <span className="font-medium text-gray-600">
+        ( thấp hơn khoảng tối thiểu:{' '}
+        <span className="font-bold text-[#166534]">{minBatteryPercent}%</span>{' '}
+        <span className="text-gray-400">-&gt;</span>{' '}
+        <span className="font-bold text-[#166534]">{sweetSpotMax}%</span> )
+      </span>
+    </>
+  );
+};
+
 function MapUpdater({ center, geoResolved }) {
   const map = useMap();
   const hasCenteredOnGeo = useRef(false);
@@ -201,15 +266,19 @@ function StationPopupBody({
       </div>
 
       {chargingSpecs.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className={`mt-2 grid gap-1.5 ${chargingSpecs.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {chargingSpecs.map((spec, index) => (
             <div
               key={`${spec.power}-${spec.count}-${index}`}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[#22c55e]/18 bg-[#f0fdf4] px-2.5 py-1 text-center"
+              className="flex items-center justify-between gap-2 rounded-xl border border-[#22c55e]/16 bg-[linear-gradient(180deg,#f7fff9_0%,#eefbf3_100%)] px-2.5 py-1.5 shadow-[0_4px_12px_rgba(34,197,94,0.07)]"
             >
-              <p className="text-[13px] font-black leading-none text-[#166534]">{spec.power} kW</p>
-              <span className="text-[#bbf7d0]/80">•</span>
-              <p className="text-[9px] font-semibold leading-none text-[#15803d]/80">{spec.count} cổng</p>
+              <p className="text-[15px] font-black leading-none text-[#166534]">
+                {spec.power}
+                <span className="ml-1 text-[10px] font-bold text-[#15803d]/80">kW</span>
+              </p>
+              <div className="rounded-full border border-[#22c55e]/18 bg-white/90 px-2 py-0.5 text-[9px] font-bold leading-none text-[#15803d]">
+                {spec.count} cổng
+              </div>
             </div>
           ))}
         </div>
@@ -247,8 +316,7 @@ function StationPopupBody({
                 {stationReachability.canReach ? 'Có thể đến nơi an toàn' : 'Không thể đến nơi'}
               </p>
               <p className="mt-1 text-[11px] leading-4.5 text-gray-700">
-                Pin dự kiến: <span className="font-bold text-black">{stationReachability.batteryLeftPercent}%</span>
-                {stationReachability.minBatteryPercent ? `, giữ trên ngưỡng pin tối thiểu ${stationReachability.minBatteryPercent}%.` : '.'}
+                {getReachabilitySummary(stationReachability)}
               </p>
             </div>
           </div>

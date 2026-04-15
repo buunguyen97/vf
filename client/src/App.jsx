@@ -351,7 +351,7 @@ function App() {
 
   const plannerContent = (
     <div className="space-y-3">
-      {(showStartupLoader || (!routeData && isAmbientLoading)) && (
+      {!showStartupLoader && !routeData && isAmbientLoading && (
         <div className="rounded-2xl border border-white/10 bg-[#0B0B0B] px-4 py-3 shadow-[0_18px_40px_rgba(0,0,0,0.32)]">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -403,12 +403,24 @@ function App() {
   return (
     <Layout onOpenMap={() => setSheetOpen(false)}>
       <div className="relative flex h-full w-full flex-row">
+        {showStartupLoader && (
+          <div className="absolute inset-0 z-[2200] flex items-center justify-center bg-[#050505]">
+            <div className="w-[min(340px,calc(100%-40px))] rounded-3xl border border-white/10 bg-[#0B0B0B] px-5 py-5 shadow-[0_22px_60px_rgba(0,0,0,0.45)]">
+              <div className="h-2 overflow-hidden rounded-full bg-white/8">
+                <div className="h-full w-2/3 animate-[pulse_1.15s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-[#1464F4] via-[#00B14F] to-[#1464F4]"></div>
+              </div>
+              <p className="mt-3 text-center text-[11px] font-medium text-white/62">Đang tải bản đồ và trạm sạc...</p>
+            </div>
+          </div>
+        )}
+
         <div
           className={`
              absolute bottom-0 z-[500] w-full flex-col border-t border-white/10 bg-[#050505]
              transition-transform duration-500 ease-in-out md:static md:z-auto md:h-full md:w-[400px] md:translate-y-0 md:border-r md:border-t-0 md:bg-[#070707]
              rounded-t-3xl md:rounded-none shadow-[0_-20px_50px_rgba(0,0,0,0.8)] md:shadow-none
              flex
+             ${showStartupLoader ? 'pointer-events-none opacity-0' : ''}
              ${shouldPrioritizePlanner ? 'h-full translate-y-0' : ''}
              ${!shouldPrioritizePlanner && sheetOpen ? 'h-[82vh] translate-y-0' : ''}
              ${!shouldPrioritizePlanner && !sheetOpen ? `h-[82vh] ${collapsedPeekClass}` : ''}
