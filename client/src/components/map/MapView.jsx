@@ -65,6 +65,7 @@ const getCleanStationAddress = (station) => {
   return cleaned
     .replace(/^Địa\s*Chỉ:\s*/i, '')
     .replace(/^Địa\s*chỉ:\s*/i, '')
+    .replace(/(?:,|\s)*(Công sạc|Cổng sạc|Công suất)\s*:?\s*$/i, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
 };

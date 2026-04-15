@@ -56,7 +56,7 @@ export default function PlannerControls({
       <div className="grid grid-cols-2 gap-2">
         <LocationSearch
           title="Điểm Đi"
-          placeholder="Vị trí hiện tại..."
+          placeholder="Tọa độ điểm đi..."
           iconColor="#00B14F"
           onLocationSelect={onOriginSelect}
           defaultDisplay={userLocation ? `${userLocation[0].toFixed(5)}, ${userLocation[1].toFixed(5)}` : ''}

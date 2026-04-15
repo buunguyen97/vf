@@ -75,8 +75,8 @@ export default function LocationSearch({
   const handleLocateMe = () => {
     if (onLocateMe) {
       onLocateMe();
-      setQuery('📍 Vị trí hiện tại của bạn');
-      setSelectedDisplay('📍 Vị trí hiện tại của bạn');
+      setQuery('📍 Đang lấy tọa độ...');
+      setSelectedDisplay('📍 Đang lấy tọa độ...');
       setIsCurrentLocation(true);
       setResults([]);
     }
@@ -114,7 +114,7 @@ export default function LocationSearch({
               className={`flex cursor-pointer items-center gap-1.5 rounded-full border border-[#00B14F]/20 bg-[#00B14F]/10 font-medium normal-case tracking-normal text-[#00B14F] transition-colors hover:bg-[#00B14F]/20 ${compact ? 'px-2 py-0.5 text-[9px]' : 'px-2.5 py-1 text-[10px]'}`}
             >
               <Crosshair className="h-3 w-3" />
-              Chọn vị trí hiện tại
+              Chọn vị trí
             </button>
           )}
           {!showLocateButton || isCurrentLocation ? <MapPin className="h-3.5 w-3.5 text-white/50" /> : null}
