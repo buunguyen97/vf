@@ -127,4 +127,9 @@ function seed() {
   console.log('Database seeded successfully.');
 }
 
-seed();
+// Auto-run when called directly (npm run seed), export for programmatic use
+if (require.main === module) {
+  seed();
+}
+
+module.exports = { seed };

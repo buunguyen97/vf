@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: ev-smart-range
+    runtime: node
+    region: singapore  # Closest to Vietnam
+    plan: free
+    buildCommand: cd client && npm install && npm run build && cd ../server && npm install
+    startCommand: cd server && node src/app.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001

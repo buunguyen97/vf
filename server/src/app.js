@@ -1,8 +1,10 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 const { getDb, closeDb } = require('./database/init');
+const { seed } = require('./database/seed');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -11,8 +13,9 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Initialize DB
+// Initialize DB & auto-seed data
 getDb();
+seed();
 
 // Routes Placeholder (will create separate files later)
 app.get('/api/health', (req, res) => {
@@ -125,6 +128,18 @@ app.get('/api/nearby-amenities', async (req, res) => {
     res.json([]);
   }
 });
+
+// Serve React client in production
+if (process.env.NODE_ENV === 'production') {
+  const clientBuildPath = path.join(__dirname, '../../client/dist');
+  app.use(express.static(clientBuildPath));
+  // All non-API routes serve the React app (SPA fallback)
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(path.join(clientBuildPath, 'index.html'));
+    }
+  });
+}
 
 // Graceful shutdown
 process.on('SIGINT', () => {
