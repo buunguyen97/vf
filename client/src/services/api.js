@@ -42,5 +42,10 @@ export const evApi = {
       params: { lat, lng, radius }
     });
     return res.data;
+  },
+
+  parseGoogleMapsLink: async (url) => {
+    const response = await axios.post(`${API_URL}/parse-google-maps-link`, { url });
+    return response.data;
   }
 };

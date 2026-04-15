@@ -10,13 +10,12 @@ export default function LocationSearch({ title, placeholder, iconColor = "#1464F
   const [isCurrentLocation, setIsCurrentLocation] = useState(!!defaultDisplay);
   const initializedRef = useRef(false);
 
-  // Sync when defaultDisplay changes (e.g. after geolocation resolves)
+  // Sync when defaultDisplay changes
   useEffect(() => {
-    if (defaultDisplay && !initializedRef.current) {
+    if (defaultDisplay !== undefined && defaultDisplay !== query) {
       setQuery(defaultDisplay);
       setSelectedDisplay(defaultDisplay);
-      setIsCurrentLocation(true);
-      initializedRef.current = true;
+      setIsCurrentLocation(typeof defaultDisplay === 'string' && defaultDisplay.includes('Vị trí hiện tại'));
     }
   }, [defaultDisplay]);
 
@@ -50,7 +49,7 @@ export default function LocationSearch({ title, placeholder, iconColor = "#1464F
     const lat = parseFloat(place.lat);
     const lon = parseFloat(place.lon);
     
-    onLocationSelect([lat, lon]);
+    onLocationSelect([lat, lon], place.display_name);
     setResults([]);
     setSelectedDisplay(place.display_name);
     setQuery(place.display_name);

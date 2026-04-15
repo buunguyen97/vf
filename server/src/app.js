@@ -32,9 +32,11 @@ app.use('/api', rangeRoutes);
 const reachabilityRoutes = require('./routes/reachability');
 const chargerRoutes = require('./routes/chargers');
 const routePlanningRoutes = require('./routes/routePlanning');
+const googleMapsParserRoutes = require('./routes/googleMapsParser');
 app.use('/api', reachabilityRoutes);
 app.use('/api', chargerRoutes);
 app.use('/api', routePlanningRoutes);
+app.use('/api', googleMapsParserRoutes);
 
 // Nominatim search proxy (avoids 403 from browser - User-Agent required)
 app.get('/api/search-location', async (req, res) => {

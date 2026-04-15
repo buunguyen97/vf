@@ -14,31 +14,48 @@ L.Icon.Default.mergeOptions({
 });
 
 // Icons
-const chargerIcon = new L.Icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/3253/3253018.png',
-  iconSize: [28, 28],
-  iconAnchor: [14, 28],
-  popupAnchor: [0, -28],
+const destinationIcon = L.divIcon({
+  className: 'custom-div-icon',
+  html: `<div class="bg-red-500 rounded-full w-4 h-4 border-2 border-white shadow shadow-black"></div>`,
+  iconSize: [16, 16],
+  iconAnchor: [8, 8]
 });
-// Special highlight icon for optimal chargers
-const optimalChargerIcon = new L.Icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/1048/1048953.png', // A star or highlighted icon
-  iconSize: [40, 40],
-  iconAnchor: [20, 40],
-  popupAnchor: [0, -40],
+
+const userIcon = L.divIcon({
+  className: 'custom-div-icon',
+  html: `<div class="bg-blue-600 rounded-full w-5 h-5 border-2 border-white shadow shadow-black ring-4 ring-blue-500/30"></div>`,
+  iconSize: [20, 20],
+  iconAnchor: [10, 10]
 });
-const userIcon = new L.Icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/149/149059.png',
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
-  popupAnchor: [0, -32],
-});
-const destinationIcon = new L.Icon({
-  iconUrl: 'https://cdn-icons-png.flaticon.com/512/1483/1483336.png',
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
-  popupAnchor: [0, -32],
-});
+
+const getChargingIcon = (st, isOptimal) => {
+  const bgColor = isOptimal ? '#22c55e' : '#06b6d4'; // Green for suggested, Cyan for others
+  const scale = isOptimal ? 'scale(1.15)' : 'scale(0.9)';
+  return L.divIcon({
+    className: 'charging-icon',
+    html: `
+      <div style="background-color: ${bgColor}; color: white; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px; border: 2px solid white; box-shadow: 0 3px 6px rgba(0,0,0,0.4); transform: ${scale};">
+        ${st.power_kw}
+      </div>
+    `,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -17]
+  });
+};
+
+// Calculate mock plug data
+const getMockPlugs = (power) => {
+   if (power >= 250) {
+     return [ { p: power, count: 2 }, { p: 60, count: 6 }, { p: 11, count: 4 } ];
+   } else if (power >= 150) {
+     return [ { p: power, count: 4 }, { p: 11, count: 2 } ];
+   } else if (power >= 60) {
+     return [ { p: power, count: 4 }, { p: 30, count: 2 } ];
+   } else {
+     return [ { p: power, count: 2 } ]; // AC only perhaps
+   }
+};
 
 function MapUpdater({ center, geoResolved }) {
   const map = useMap();
@@ -65,25 +82,22 @@ function MapFitter({ routeCoords }) {
   return null;
 }
 
-// Map Event to capture double-clicks for destination setting
-function MapClickHandler({ setDestination }) {
+// Map Event to capture double-clicks
+function MapClickHandler({ setDestination, routeData, setWaypoint }) {
   useMapEvents({
     dblclick(e) {
-      // Double click to set destination (prevents accidental pins)
-      setDestination([e.latlng.lat, e.latlng.lng]);
+      if (routeData) {
+        setWaypoint([e.latlng.lat, e.latlng.lng]);
+      } else {
+        setDestination([e.latlng.lat, e.latlng.lng]);
+      }
+    },
+    contextmenu(e) { // Long press on mobile
+      if (routeData) {
+        setWaypoint([e.latlng.lat, e.latlng.lng]);
+      }
     }
   });
-  return null;
-}
-
-// Fly to a specific location when focusCoords changes
-function MapFlyTo({ coords }) {
-  const map = useMap();
-  useEffect(() => {
-    if (coords) {
-      map.flyTo(coords, 15, { duration: 1.2 });
-    }
-  }, [coords, map]);
   return null;
 }
 
@@ -91,12 +105,14 @@ export default function MapView({
   userLocation, 
   estimatedRange, 
   onStationSelect,
-  selectedStationId,
   routeData,
   setDestination,
   destination,
   geoResolved,
-  focusCoords
+  onRouteReplan,
+  waypoint,
+  setWaypoint,
+  oldRoutePolyline
 }) {
   const [ambientStations, setAmbientStations] = useState([]);
   const lastFetchRef = useRef(null);
@@ -170,8 +186,7 @@ export default function MapView({
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         />
         
-        <MapClickHandler setDestination={setDestination} />
-        <MapFlyTo coords={focusCoords} />
+        <MapClickHandler setDestination={setDestination} routeData={routeData} setWaypoint={setWaypoint} />
 
         {userLocation && (
           <>
@@ -201,49 +216,96 @@ export default function MapView({
           </Marker>
         )}
 
+        {waypoint && (
+          <Marker position={waypoint} icon={destinationIcon}>
+             <Popup><div className="font-semibold text-gray-900">Điểm đổi tuyến</div></Popup>
+          </Marker>
+        )}
+
+        {oldRoutePolyline && (
+          <Polyline 
+             positions={oldRoutePolyline} 
+             pathOptions={{ color: '#9CA3AF', weight: 4, opacity: 0.6, lineCap: 'round', lineJoin: 'round', dashArray: '5, 10' }} 
+          />
+        )}
+
+        {routeData && routeData.alternativeRoutes && routeData.alternativeRoutes.map(altRoute => {
+          if (altRoute.index === routeData.selectedRouteIndex) return null; // Don't draw the selected one here
+          return (
+            <Polyline 
+               key={altRoute.index}
+               positions={altRoute.polylineCoords} 
+               pathOptions={{ color: 'gray', weight: 4, opacity: 0.6, lineCap: 'round', lineJoin: 'round' }} 
+               eventHandlers={{
+                 click: (e) => { L.DomEvent.stopPropagation(e); if (onRouteReplan) onRouteReplan(altRoute.index); },
+                 dblclick: (e) => { L.DomEvent.stopPropagation(e); if (onRouteReplan) onRouteReplan(altRoute.index); },
+                 contextmenu: (e) => { L.DomEvent.stopPropagation(e); if (onRouteReplan) onRouteReplan(altRoute.index); }
+               }}
+            />
+          );
+        })}
+
         {routeData && routeData.polylineCoords && (
           <>
             <Polyline 
                positions={routeData.polylineCoords} 
-               pathOptions={{ color: '#1464F4', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} 
+               pathOptions={{ color: '#1464F4', weight: 6, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} 
             />
             <MapFitter routeCoords={routeData.polylineCoords} />
           </>
         )}
 
-        {displayStations.map(station => {
-          const isOptimal = optimalStationIds.has(station.id);
+        {displayStations.map(st => {
+          const isOptimal = optimalStationIds.has(st.id);
           return (
-            <Marker 
-              key={station.id} 
-              position={[station.latitude, station.longitude]} 
-              icon={isOptimal ? optimalChargerIcon : chargerIcon}
+            <Marker
+              key={st.id}
+              position={[st.latitude, st.longitude]}
+              icon={getChargingIcon(st, isOptimal)}
+              zIndexOffset={isOptimal ? 1000 : 0}
               eventHandlers={{
-                click: () => onStationSelect(station)
+                click: () => onStationSelect(st)
               }}
             >
-              <Popup>
-                <div className="min-w-[160px]">
-                  {isOptimal && (
-                    <div className="bg-[#00B14F] text-white text-[10px] font-bold uppercase px-2 py-0.5 rounded-t -mt-3 -mx-3 mb-2 flex items-center justify-center gap-1">
-                      <Zap className="w-3 h-3"/> Đề xuất sạc
-                    </div>
-                  )}
-                  <h3 className="font-bold text-gray-900 border-b pb-1 mb-2 leading-tight">{station.name}</h3>
-                  <p className="text-xs text-gray-600 mb-2 truncate max-w-xs">{station.address}</p>
-                  
-                  {station.batteryAtStation !== undefined ? (
-                    <div className="bg-gray-100 p-2 rounded text-sm mb-1 mt-1">
-                      Pin dự kiến chặng: <strong className={isOptimal ? 'text-green-600' : 'text-blue-600'}>{station.batteryAtStation}%</strong>
-                    </div>
-                  ) : null}
+              <Popup className="station-popup">
+                <div className="w-56 p-1">
+                  <h3 className="font-bold text-gray-900 border-b pb-2 mb-2 leading-tight">{st.name}</h3>
+                  <p className="text-xs text-gray-500 mb-3">{st.address}</p>
 
-                  <div className="flex justify-between items-center mt-2">
-                     <span className="text-xs bg-[#1464F4] text-white px-2 py-0.5 rounded font-mono">
-                       {station.power_kw} kW
-                     </span>
-                     <span className="text-[10px] bg-black text-white px-1.5 py-0.5 rounded">VinFast</span>
+                  <p className="font-semibold text-xs text-gray-700 mb-2 uppercase tracking-wide">Trụ sạc khả dụng:</p>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {getMockPlugs(st.power_kw).map((plug, i) => (
+                      <div key={i} className="flex items-center gap-1.5 bg-green-50 border border-green-200 px-2.5 py-1.5 rounded-lg w-[48%]">
+                         <div className="bg-green-500 w-2 h-2 rounded-full"></div>
+                         <div className="flex flex-col">
+                            <span className="text-sm font-bold text-green-700 leading-none">{plug.p}kW</span>
+                            <span className="text-[10px] text-gray-600 font-medium">{plug.count} trụ</span>
+                         </div>
+                      </div>
+                    ))}
                   </div>
+
+                  <div className="mt-3 pt-2 flex items-center justify-between border-t border-gray-100">
+                    <span className="text-sm bg-gray-100 px-2 py-1 rounded text-gray-800 font-medium">CCS2</span>
+                    {st.batteryAtStation && (
+                      <div className="flex items-center text-blue-600 font-bold bg-blue-50 px-2 py-1 rounded">
+                        Pin dự kiến: {st.batteryAtStation}%
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="mt-3">
+                    <a
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${st.latitude},${st.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 w-full bg-[#1464F4] hover:bg-[#0D4BC4] font-bold py-2.5 px-4 rounded-lg shadow-md transition-colors text-sm uppercase"
+                      style={{ color: '#ffffff', textDecoration: 'none' }}
+                    >
+                      <Navigation className="w-4 h-4" strokeWidth={3} /> BẮT ĐẦU ĐI VỚI GOOGLE MAP
+                    </a>
+                  </div>
+
                 </div>
               </Popup>
             </Marker>

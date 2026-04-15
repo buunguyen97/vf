@@ -8,8 +8,7 @@ import ConsumptionPanel from './components/range/ConsumptionPanel'
 import RangeDisplay from './components/range/RangeDisplay'
 import MapView from './components/map/MapView'
 import LocationSearch from './components/map/LocationSearch'
-import StationCard from './components/station/StationCard'
-import RouteItinerary from './components/route/RouteItinerary'
+import GoogleMapsLinkInput from './components/map/GoogleMapsLinkInput'
 import { evApi } from './services/api'
 import { ChevronUp } from 'lucide-react'
 
@@ -34,16 +33,18 @@ function App() {
   const [userLocation, setUserLocation] = useState(null) 
   const [geoResolved, setGeoResolved] = useState(false)
   const [destination, setDestination] = useState(null)
+  const [waypoint, setWaypoint] = useState(null)
   const [routeData, setRouteData] = useState(null)
+  const [oldRoutePolyline, setOldRoutePolyline] = useState(null)
   const [isRouting, setIsRouting] = useState(false)
 
-  const [selectedStation, setSelectedStation] = useState(null)
   const [reachability, setReachability] = useState(null)
-  const [focusCoords, setFocusCoords] = useState(null)
   
   // Mobile UX State
   const [sheetOpen, setSheetOpen] = useState(false)
   const [locationName, setLocationName] = useState('')
+  const [originName, setOriginName] = useState('')
+  const [destName, setDestName] = useState('')
 
   // Fetch weather + city name for any lat/lon
   const fetchWeatherForLocation = (lat, lon) => {
@@ -78,6 +79,7 @@ function App() {
           const lat = position.coords.latitude;
           const lon = position.coords.longitude;
           setUserLocation([lat, lon]);
+          setOriginName('📍 Vị trí hiện tại của bạn');
           setGeoResolved(true);
           fetchWeatherForLocation(lat, lon);
         },
@@ -87,10 +89,24 @@ function App() {
   };
 
   // Handler for when user manually selects a departure location
-  const handleOriginSelect = (coords) => {
+  const handleOriginSelect = (coords, name = '') => {
     setUserLocation(coords);
-    setGeoResolved(false); // Not GPS anymore
+    if (name) setOriginName(name);
+    setGeoResolved(true); // Must be true to dismiss the loading overlay
     fetchWeatherForLocation(coords[0], coords[1]);
+  };
+
+  const handleParsedLink = ({ origin, dest }) => {
+    if (origin) {
+      setUserLocation(origin);
+      setOriginName(`${origin[0].toFixed(5)}, ${origin[1].toFixed(5)}`);
+      setGeoResolved(true);
+      fetchWeatherForLocation(origin[0], origin[1]);
+    }
+    if (dest) {
+      setDestination(dest);
+      setDestName(`${dest[0].toFixed(5)}, ${dest[1].toFixed(5)}`);
+    }
   };
 
   // Initialization
@@ -137,60 +153,40 @@ function App() {
     return () => clearTimeout(debounceTimer);
   }, [batteryPercent, selectedVehicleId, conditions]);
 
-  // Optimal Router Calculator Planner (debounced)
-  useEffect(() => {
+  // Lấy lộ trình tối ưu khi người dùng nhấn nút GỢI Ý TRẠM SẠC hoặc chọn tuyến phụ
+  const calculateRouteAndStations = (routeIndex = 0) => {
     if (!destination || !userLocation || !selectedVehicleId) return;
 
     setIsRouting(true);
-    const debounceTimer = setTimeout(() => {
-      evApi.getOptimalRoute({
-        origin: userLocation,
-        destination: destination,
-        currentBattery: batteryPercent,
-        targetBattery: targetBatteryPercent,
-        vehicleId: selectedVehicleId,
-        conditions: conditions
-      }).then(data => {
-         setRouteData(data);
-         setSheetOpen(false);
-      }).catch(console.error)
-        .finally(() => setIsRouting(false));
-    }, 800);
-
-    return () => {
-      clearTimeout(debounceTimer);
-      setIsRouting(false);
-    };
-  }, [destination, batteryPercent, targetBatteryPercent, selectedVehicleId, conditions]);
-
-  // Handle station selection
-  const handleStationSelect = (station) => {
-    setSelectedStation(station);
-    setSheetOpen(false); // Hide sheet to look at card
-    // Focus map on this station
-    setFocusCoords([station.latitude, station.longitude]);
-    
-    // If station already has batteryAtStation from route planner, use it directly
-    if (station.batteryAtStation !== undefined) {
-      setReachability({
-        canReach: station.batteryAtStation > 0,
-        batteryLeftPercent: station.batteryAtStation,
-        distanceKm: station.distanceFromStartKm || 0,
-        fromRoutePlanner: true
-      });
-      return;
-    }
-
-    // Otherwise, fetch from reachability API (for ambient stations without route)
-    evApi.checkReachability({
-      currentLocation: userLocation,
-      destination: [station.latitude, station.longitude],
-      batteryPercent,
+    evApi.getOptimalRoute({
+      origin: userLocation,
+      destination: destination,
+      waypoint: waypoint,
+      currentBattery: batteryPercent,
+      targetBattery: targetBatteryPercent,
       vehicleId: selectedVehicleId,
-      ...conditions
-    })
-    .then(setReachability)
-    .catch(console.error);
+      conditions: conditions,
+      routeIndex: routeIndex
+    }).then(data => {
+       setRouteData(data);
+       setSheetOpen(false);
+    }).catch(console.error)
+      .finally(() => setIsRouting(false));
+  };
+
+  // Tự động tính lại mỗi khi waypoint thay đổi
+  useEffect(() => {
+    if (waypoint) {
+      if (routeData && routeData.polylineCoords) {
+        setOldRoutePolyline(routeData.polylineCoords);
+      }
+      calculateRouteAndStations(0);
+    }
+  }, [waypoint]);
+
+  // Handle station selection (just close mobile sheet so popup is visible)
+  const handleStationSelect = (station) => {
+    setSheetOpen(false); 
   };
 
   return (
@@ -236,21 +232,27 @@ function App() {
                   setBatteryPercent={setBatteryPercent} 
                 />
 
-                {/* 3. Tiêu hao điện (km/1%) */}
+                {/* 3. Pin lịch trình target (Ngưỡng pin tối thiểu) */}
+                <TargetBatteryInput 
+                  targetBatteryPercent={targetBatteryPercent}
+                  setTargetBatteryPercent={setTargetBatteryPercent}
+                />
+
+                {/* 4. Tiêu hao điện (km/1%) */}
                 <ConsumptionPanel 
                   conditions={conditions} 
                   setConditions={setConditions}
                   vehicles={vehicles}
                   selectedVehicleId={selectedVehicleId}
                 />
-                {/* 7. Pin lịch trình target */}
-                <TargetBatteryInput 
-                  targetBatteryPercent={targetBatteryPercent}
-                  setTargetBatteryPercent={setTargetBatteryPercent}
-                />
 
                 {/* 4. Kết quả phạm vi (ẩn theo yêu cầu) */}
                 {/* <RangeDisplay range={estimatedRange} loading={isCalculating} /> */}
+
+                {/* Phân tích Link */}
+                <GoogleMapsLinkInput 
+                  onOriginDestFound={({ origin, destination: dest }) => handleParsedLink({ origin, dest })} 
+                />
 
                 {/* 5. Điểm xuất phát */}
                 <LocationSearch 
@@ -258,17 +260,21 @@ function App() {
                   placeholder="Vị trí hiện tại..." 
                   iconColor="#00B14F"
                   onLocationSelect={handleOriginSelect}
-                  defaultDisplay={geoResolved ? '📍 Vị trí hiện tại của bạn' : ''}
+                  defaultDisplay={originName}
                   showLocateButton={true}
                   onLocateMe={acquireCurrentLocation}
                 />
                 
                 {/* 6. Điểm đến */}
                 <LocationSearch 
-                  title="Ghim Tọa Độ Điểm Đến" 
+                  title="Điểm Đến" 
                   placeholder="Tên địa danh..." 
                   iconColor="#1464F4"
-                  onLocationSelect={setDestination} 
+                  onLocationSelect={(coords, name = '') => {
+                     setDestination(coords);
+                     if (name) setDestName(name);
+                  }} 
+                  defaultDisplay={destName}
                 />
 
                 {/* 8. Điều kiện lái xe (nâng cao) */}
@@ -278,6 +284,27 @@ function App() {
                   locationName={locationName}
                 />
 
+                {/* 9. Nút Gợi ý Trạm sạc */}
+                <button
+                  onClick={() => {
+                    if (userLocation) {
+                      if (destination) {
+                        calculateRouteAndStations();
+                      } else {
+                        setFocusCoords([...userLocation]);
+                        setSheetOpen(false);
+                      }
+                    } else {
+                      alert("Vui lòng bật định vị hoặc chọn điểm xuất phát để gợi ý trạm sạc gần bạn.");
+                    }
+                  }}
+                  className="w-full bg-gradient-to-r from-[#00B14F] to-[#008A3D] hover:from-[#00C259] hover:to-[#00B14F] text-white font-bold py-3.5 px-4 rounded-xl shadow-[0_8px_20px_rgba(0,177,79,0.3)] transition-all flex items-center justify-center gap-2 mt-2 hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                  </svg>
+                  GỢI Ý TRẠM SẠC
+                </button>
              </div>
           </div>
         </div>
@@ -285,17 +312,7 @@ function App() {
         {/* Main Map Area */}
         <div className="flex-1 w-full h-full relative z-[100] bg-gray-950">
           
-          {/* Floating Route Itinerary over Map (Desktop) */}
-          {routeData && routeData.optimalStations && (
-            <div className="absolute top-3 left-3 z-[400] hidden md:block w-[340px] max-h-[calc(100%-24px)] overflow-y-auto hide-scrollbar pointer-events-auto">
-              <RouteItinerary 
-                stations={routeData.optimalStations} 
-                chargingStops={routeData.chargingStops}
-                onStationSelect={handleStationSelect}
-                insufficientBattery={routeData.insufficientBattery}
-              />
-            </div>
-          )}
+          {/* Removed RouteItinerary section */}
 
           {/* Mobile Mini Range indicator when map is focused */}
           <div className="absolute top-4 left-4 z-[400] md:hidden pointer-events-none">
@@ -328,36 +345,36 @@ function App() {
             </div>
           )}
 
-          <MapView 
-            userLocation={userLocation}
-            estimatedRange={estimatedRange}
-            onStationSelect={handleStationSelect}
-            selectedStationId={selectedStation?.id}
-            geoResolved={geoResolved}
-            routeData={routeData}
-            destination={destination}
-            focusCoords={focusCoords}
-            setDestination={(dest) => {
-              setDestination(dest);
-              setSheetOpen(false); // Map clicked, hide sheet
-            }}
-          />
+          <div className="absolute inset-0 z-0">
+            {geoResolved && <MapView 
+                userLocation={userLocation}
+                estimatedRange={estimatedRange}
+                onStationSelect={handleStationSelect}
+                geoResolved={geoResolved}
+                routeData={routeData}
+                destination={destination}
+                waypoint={waypoint}
+                setWaypoint={setWaypoint}
+                oldRoutePolyline={oldRoutePolyline}
+                onRouteReplan={(idx) => calculateRouteAndStations(idx)}
+                setDestination={(dest) => {
+                  setDestination(dest);
+                  setSheetOpen(false); // Map clicked, hide sheet
+                }}
+              />
+            }
+          </div>
           
-          {selectedStation && (
-            <StationCard 
-              station={selectedStation} 
-              reachability={reachability} 
-              onClose={() => setSelectedStation(null)} 
-            />
-          )}
+
 
           {/* Reset button Mobile adapted */}
           {destination && (
              <button
                onClick={() => {
                   setDestination(null)
+                  setWaypoint(null)
+                  setOldRoutePolyline(null)
                   setRouteData(null)
-                  setSelectedStation(null)
                }}
                className="absolute top-[85px] lg:bottom-6 lg:top-auto right-4 lg:left-6 lg:right-auto z-[400] bg-[#DA303E] hover:bg-[#A0222C] text-white font-bold py-2.5 px-6 rounded-full shadow-[0_10px_20px_rgba(218,48,62,0.4)] transition-all text-xs lg:text-sm hover:scale-105 active:scale-95"
              >

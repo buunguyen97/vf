@@ -3,28 +3,117 @@ const router = express.Router();
 const { getDb } = require('../database/init');
 const { estimateRange } = require('../services/rangeEngine');
 
+// Helper: Haversine distance
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
 router.post('/optimal-route', async (req, res) => {
   try {
-    const { origin, destination, currentBattery, targetBattery, vehicleId, conditions } = req.body;
+    const { origin, destination, waypoint, currentBattery, targetBattery, vehicleId, conditions } = req.body;
 
     if (!origin || !destination || !currentBattery || targetBattery === undefined || !vehicleId) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    // 1. Fetch Route from OSRM
-    const osrmUrl = `http://router.project-osrm.org/route/v1/driving/${origin[1]},${origin[0]};${destination[1]},${destination[0]}?overview=full&geometries=geojson`;
+    const routeIndex = req.body.routeIndex || 0;
+
+    let routesArray = [];
+
+    // 1. Fetch Main Route
+    const waypointStr = waypoint ? `;${parseFloat(waypoint[1])},${parseFloat(waypoint[0])}` : '';
+    const osrmUrl = `http://router.project-osrm.org/route/v1/driving/${origin[1]},${origin[0]}${waypointStr};${destination[1]},${destination[0]}?overview=full&geometries=geojson&continue_straight=true`;
     const routeRes = await fetch(osrmUrl);
     
-    if (!routeRes.ok) {
-        return res.status(500).json({ error: 'Failed to fetch route from OSRM' });
+    if (routeRes.ok) {
+        const routeData = await routeRes.json();
+        if (routeData.code === 'Ok' && routeData.routes.length > 0) {
+            routesArray.push(routeData.routes[0]);
+        }
     }
-    const routeData = await routeRes.json();
-    
-    if (routeData.code !== 'Ok' || routeData.routes.length === 0) {
+
+    if (routesArray.length === 0) {
         return res.status(404).json({ error: 'No route found' });
     }
 
-    const route = routeData.routes[0];
+    // TẠO TUYẾN ĐƯỜNG PHỤ NẾU CHƯA CÓ WAYPOINT
+    if (!waypoint) {
+        const lat1 = origin[0];
+        const lon1 = origin[1];
+        const lat2 = destination[0];
+        const lon2 = destination[1];
+
+        const totalDistApprox = getDistance(lat1, lon1, lat2, lon2);
+        
+        if (totalDistApprox > 3) {
+            const midLat = (lat1 + lat2) / 2;
+            const midLon = (lon1 + lon2) / 2;
+
+            const dx = lon2 - lon1;
+            const dy = lat2 - lat1;
+            const len = Math.sqrt(dx*dx + dy*dy);
+            
+            if (len > 0) {
+                const nx = -dy / len;
+                const ny = dx / len;
+
+                // Shift by 20% of distance, cap at 30km
+                const shiftKm = Math.min(totalDistApprox * 0.2, 30);
+                const shiftDeg = shiftKm / 111.0;
+
+                const leftWp = [midLat + ny * shiftDeg, midLon + nx * shiftDeg];
+                const rightWp = [midLat - ny * shiftDeg, midLon - nx * shiftDeg];
+
+                const leftUrl = `http://router.project-osrm.org/route/v1/driving/${origin[1]},${origin[0]};${leftWp[1]},${leftWp[0]};${destination[1]},${destination[0]}?overview=full&geometries=geojson&continue_straight=true`;
+                const rightUrl = `http://router.project-osrm.org/route/v1/driving/${origin[1]},${origin[0]};${rightWp[1]},${rightWp[0]};${destination[1]},${destination[0]}?overview=full&geometries=geojson&continue_straight=true`;
+                
+                try {
+                  const [lRes, rRes] = await Promise.all([fetch(leftUrl), fetch(rightUrl)]);
+                  if (lRes.ok) {
+                      const lData = await lRes.json();
+                      if (lData.code === 'Ok' && lData.routes.length > 0) {
+                          const r = lData.routes[0];
+                          if (r.distance < routesArray[0].distance * 1.35) routesArray.push(r);
+                      }
+                  }
+                  if (rRes.ok) {
+                      const rData = await rRes.json();
+                      if (rData.code === 'Ok' && rData.routes.length > 0) {
+                          const r = rData.routes[0];
+                          if (r.distance < routesArray[0].distance * 1.35) routesArray.push(r);
+                      }
+                  }
+                } catch(e) {}
+            }
+        }
+    }
+
+    // Lọc trùng lặp do OSRM có thể nắn hai đường về cùng 1 đường cao tốc
+    const uniqueRoutes = [];
+    const seenDistances = new Set();
+    for (const r of routesArray) {
+       const val = Math.round(r.distance / 50); // Dung sai 50m
+       if (!seenDistances.has(val)) {
+          seenDistances.add(val);
+          uniqueRoutes.push(r);
+       }
+    }
+    routesArray = uniqueRoutes;
+
+    const alternativeRoutes = routesArray.map((r, index) => ({
+      index,
+      distanceKm: r.distance / 1000,
+      polylineCoords: r.geometry.coordinates.map(coord => [coord[1], coord[0]])
+    }));
+
+    const safeRouteIndex = routeIndex < routesArray.length ? routeIndex : 0;
+    const route = routesArray[safeRouteIndex];
     const totalDistanceKm = route.distance / 1000;
     const polylineCoords = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
 
@@ -45,17 +134,6 @@ router.post('/optimal-route', async (req, res) => {
 
     const energyCapacityWh = vehicle.battery_capacity_kwh * 1000;
     const allDbStations = db.prepare('SELECT * FROM charging_stations').all();
-
-    // Helper: Haversine distance
-    function getDistance(lat1, lon1, lat2, lon2) {
-      const R = 6371;
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLon = (lon2 - lon1) * Math.PI / 180;
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLon/2) * Math.sin(dLon/2);
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    }
 
     // Helper: Convert km to battery % consumed
     function kmToBatteryPct(km) {
@@ -105,200 +183,61 @@ router.post('/optimal-route', async (req, res) => {
     allRouteStations.sort((a, b) => a.distanceFromStartKm - b.distanceFromStartKm);
 
     // ============================================================
-    // PASS 2: Smart Multi-Station Route Planner
+    // PASS 2: SINGLE-SHOT CHARGING SUGGESTION
     // ============================================================
-    // Strategy: At each charging stop, suggest 2-3 best alternatives.
-    // Uses exact targetBattery as the hard minimum (no buffer).
-    // Scoring factors: distance progress, route proximity, charger power,
-    // and estimated charging time.
-    // ============================================================
+    // Chỉ gợi ý NHỮNG trạm sạc mà khi xe đen nơi, mức pin nằm trong
+    // khoảng [targetBattery, targetBattery + 10%] và KHÔNG giả lập sạc thêm.
 
-    const chargingStops = []; // Array of stop groups: [{ stopNumber, stations: [...] }]
-    let currentBatteryPct = currentBattery;
-    let currentPositionKm = 0;
-    const minBatteryPct = Math.max(targetBattery, 5); // Exact threshold, never go below
-    const chargeToPercent = 90;
+    const chargingStops = [];
+    const optimalStations = [];
+    
+    const minBatteryPct = Math.max(targetBattery, 5); 
+    const sweetSpotMax = minBatteryPct + 10;
 
-    const candidateStations = allRouteStations.filter(st => {
-      return st.distanceFromStartKm < totalDistanceKm;
-    });
+    const candidateStations = allRouteStations.filter(st => st.distanceFromStartKm < totalDistanceKm);
+    const matchingStations = [];
 
-    let safetyCounter = 0;
-    const maxStops = 20;
+    for (const st of candidateStations) {
+      const batteryNeeded = kmToBatteryPct(st.distanceFromStartKm);
+      const batteryOnArrival = currentBattery - batteryNeeded;
 
-    while (safetyCounter < maxStops) {
-      safetyCounter++;
-
-      const maxRangeKm = batteryPctToKm(currentBatteryPct - minBatteryPct);
-      const maxReachableKm = currentPositionKm + maxRangeKm;
-
-      // Can we reach the destination with battery above threshold?
-      const distToDestination = totalDistanceKm - currentPositionKm;
-      const batteryNeededForDest = kmToBatteryPct(distToDestination);
-      const batteryAtDestination = currentBatteryPct - batteryNeededForDest;
-
-      if (batteryAtDestination >= minBatteryPct) {
-        break; // We can make it!
+      if (batteryOnArrival >= minBatteryPct && batteryOnArrival <= sweetSpotMax) {
+        matchingStations.push({
+          ...st,
+          batteryAtStation: Math.round(batteryOnArrival),
+          score: st.power_kw - (st.detourKm * 50) // Sort by power and proximity
+        });
       }
-
-      // Need a charging stop — find ALL stations in the sweet spot range
-      // Sweet spot: battery on arrival between targetBattery% and targetBattery+10%
-      const sweetSpotMax = minBatteryPct + 10;
-      const matchingStations = [];
-
-      for (let i = 0; i < candidateStations.length; i++) {
-        const st = candidateStations[i];
-
-        // Skip stations behind us
-        if (st.distanceFromStartKm <= currentPositionKm) continue;
-
-        // Can we reach this station?
-        const distToStation = st.distanceFromStartKm - currentPositionKm;
-        const batteryNeeded = kmToBatteryPct(distToStation);
-        const batteryOnArrival = currentBatteryPct - batteryNeeded;
-
-        // Only include stations where we arrive in the sweet spot range
-        if (batteryOnArrival >= minBatteryPct && batteryOnArrival <= sweetSpotMax) {
-          // Score for sorting (best recommendation first)
-          const detourPenalty = st.detourKm * 20;
-          const powerBonus = Math.min(st.power_kw / 10, 15);
-          const progressScore = (st.distanceFromStartKm / totalDistanceKm) * 50;
-          const score = progressScore - detourPenalty + powerBonus;
-
-          matchingStations.push({
-            ...st,
-            batteryAtStation: Math.round(batteryOnArrival),
-            score,
-          });
-        }
-      }
-
-      // If no station in sweet spot, fallback: find any reachable station
-      if (matchingStations.length === 0) {
-        for (let i = 0; i < candidateStations.length; i++) {
-          const st = candidateStations[i];
-          if (st.distanceFromStartKm <= currentPositionKm) continue;
-
-          const distToStation = st.distanceFromStartKm - currentPositionKm;
-          const batteryNeeded = kmToBatteryPct(distToStation);
-          const batteryOnArrival = currentBatteryPct - batteryNeeded;
-
-          if (batteryOnArrival >= minBatteryPct) {
-            const detourPenalty = st.detourKm * 20;
-            const powerBonus = Math.min(st.power_kw / 10, 15);
-            const progressScore = (st.distanceFromStartKm / totalDistanceKm) * 50;
-            const score = progressScore - detourPenalty + powerBonus;
-
-            matchingStations.push({
-              ...st,
-              batteryAtStation: Math.round(batteryOnArrival),
-              score,
-            });
-          }
-        }
-        // Take only the best one as fallback
-        matchingStations.sort((a, b) => b.score - a.score);
-        matchingStations.splice(1);
-      }
-
-      if (matchingStations.length === 0) {
-        console.warn(`[RoutePlanner] No reachable station from km ${currentPositionKm.toFixed(1)}, battery ${currentBatteryPct.toFixed(1)}%`);
-        break;
-      }
-
-      // Sort by score descending — best recommendation first
-      matchingStations.sort((a, b) => b.score - a.score);
-
-      const alternatives = matchingStations;
-
-      const stopNumber = chargingStops.length + 1;
-
-      // Mark stations
-      alternatives.forEach((st, idx) => {
-        st.isOptimal = true;
-        st.stopNumber = stopNumber;
-        st.isRecommended = idx === 0; // First one is the top recommendation
-        st.alternativeIndex = idx;
-      });
-
-      chargingStops.push({
-        stopNumber,
-        stations: alternatives,
-      });
-
-      // For the next iteration, assume we go to the RECOMMENDED station (best score)
-      const recommended = alternatives[0];
-      currentPositionKm = recommended.distanceFromStartKm;
-      currentBatteryPct = chargeToPercent;
     }
 
-    // Build flat optimalStations list (all alternatives from all stops)
-    const optimalStations = chargingStops.flatMap(stop => stop.stations);
+    matchingStations.sort((a, b) => b.score - a.score);
 
-    // ============================================================
-    // PASS 3: Emergency — Battery too low? Find nearest station!
-    // ============================================================
-    const maxRangeFromStart = batteryPctToKm(currentBattery - minBatteryPct);
-    const canReachDestination = maxRangeFromStart >= totalDistanceKm;
-    let emergencyStation = null;
+    if (matchingStations.length > 0) {
+       matchingStations.forEach((st, idx) => {
+         st.isOptimal = true;
+         st.stopNumber = 1;
+         st.isRecommended = idx === 0;
+         st.alternativeIndex = idx;
+         optimalStations.push(st);
+       });
+       chargingStops.push({ stopNumber: 1, stations: optimalStations });
+    }
+
     let insufficientBattery = false;
-
-    if (chargingStops.length === 0 && !canReachDestination) {
-      insufficientBattery = true;
-
-      let nearestDist = Infinity;
-      for (const st of allDbStations) {
-        const dist = getDistance(origin[0], origin[1], st.latitude, st.longitude) * 1.3;
-        const batteryNeeded = kmToBatteryPct(dist);
-        const batteryOnArrival = currentBattery - batteryNeeded;
-
-        if (dist < nearestDist && batteryOnArrival >= 0) {
-          nearestDist = dist;
-          emergencyStation = {
-            ...st,
-            distanceFromStartKm: Math.round(dist * 10) / 10,
-            batteryAtStation: Math.max(0, Math.round(batteryOnArrival)),
-            isEmergency: true,
-            isOptimal: true,
-            stopNumber: 1,
-            isRecommended: true,
-            alternativeIndex: 0,
-          };
-        }
-      }
-
-      if (emergencyStation) {
-        chargingStops.push({ stopNumber: 1, stations: [emergencyStation] });
-        optimalStations.push(emergencyStation);
-        console.log(`[RoutePlanner] Emergency: nearest station "${emergencyStation.name}" at ${nearestDist.toFixed(1)}km`);
-      } else {
-        console.warn(`[RoutePlanner] Emergency: NO reachable station at all with ${currentBattery}% battery!`);
-      }
+    let emergencyStation = null;
+    const canReachDestination = (currentBattery - kmToBatteryPct(totalDistanceKm)) >= minBatteryPct;
+    
+    if (matchingStations.length === 0 && !canReachDestination) {
+        insufficientBattery = true;
     }
 
-    // Calculate battery at each route station for display
-    // Use the recommended station path for battery simulation
-    const recommendedPath = chargingStops.map(stop => stop.stations[0]);
-
+    // ============================================================
+    // PASS 3: Tính toán pin cho tất cả các trạm hiển thị
+    // ============================================================
+    // Bỏ qua giả lập sạc, hiển thị lượng pin thực tế nếu chạy một mạch
     const displayStations = allRouteStations.map(st => {
-      const distFromStart = st.distanceFromStartKm;
-
-      let segmentStartKm = 0;
-      let segmentStartBattery = currentBattery;
-
-      for (const optSt of recommendedPath) {
-        if (optSt.distanceFromStartKm < distFromStart) {
-          segmentStartKm = optSt.distanceFromStartKm;
-          segmentStartBattery = chargeToPercent;
-        } else {
-          break;
-        }
-      }
-
-      const distInSegment = distFromStart - segmentStartKm;
-      const batteryUsed = kmToBatteryPct(distInSegment);
-      const batteryAtStation = Math.round(segmentStartBattery - batteryUsed);
-
+      const batteryNeeded = kmToBatteryPct(st.distanceFromStartKm);
+      const batteryAtStation = Math.round(currentBattery - batteryNeeded);
       return { ...st, batteryAtStation };
     }).filter(st => st.batteryAtStation > 0);
 
@@ -310,6 +249,8 @@ router.post('/optimal-route', async (req, res) => {
         chargingStops, // New: grouped stops with alternatives
         insufficientBattery,
         emergencyStation: emergencyStation || null,
+        alternativeRoutes,
+        selectedRouteIndex: routeIndex
     });
 
   } catch (error) {

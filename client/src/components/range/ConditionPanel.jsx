@@ -65,6 +65,29 @@ function EditableBadge({ value, unit, min, max, step, onChange, className = '' }
 }
 
 export default function ConditionPanel({ conditions, setConditions, locationName }) {
+  const speed = conditions.speed;
+  const temp = conditions.temperature;
+  const acOn = conditions.acOn;
+
+  let speedFactor = 1.0;
+  if (speed <= 70) speedFactor = 1.00;
+  else if (speed <= 80) speedFactor = 1.05;
+  else if (speed <= 90) speedFactor = 1.12;
+  else if (speed <= 100) speedFactor = 1.20;
+  else if (speed <= 110) speedFactor = 1.30;
+  else speedFactor = 1.40;
+
+  let tempFactor = 1.0;
+  if (temp >= 20 && temp <= 30) tempFactor = 1.00;
+  else if (temp >= 31 && temp <= 35) tempFactor = 1.05;
+  else if (temp > 35) tempFactor = 1.10;
+  else if (temp >= 10 && temp <= 19) tempFactor = 1.08;
+  else tempFactor = 1.15;
+
+  const acFactor = acOn ? 1.05 : 1.00;
+
+  const degradationPercent = Math.max(0, Math.round((((speedFactor * tempFactor * acFactor) - 1) * 100) / 2.5));
+
   return (
     <div className="bg-white/5 backdrop-blur-2xl rounded-xl p-3 md:p-3.5 border border-white/10 shadow-lg relative overflow-hidden">
       <h2 className="text-[11px] md:text-xs font-bold text-white/80 mb-2.5 uppercase tracking-wide flex items-center gap-1.5">
@@ -121,6 +144,14 @@ export default function ConditionPanel({ conditions, setConditions, locationName
             onChange={(e) => setConditions({...conditions, temperature: parseInt(e.target.value)})}
             className="w-full h-1 bg-white/10 rounded-full appearance-none accent-[#1464F4] outline-none"
           />
+        </div>
+
+        {/* Degradation Show */}
+        <div className="flex justify-between items-center text-[11px] md:text-xs bg-black/30 px-2.5 py-2 rounded-lg border border-white/5">
+           <span className="text-white/70 font-medium">Trừ hao tổng pin</span>
+           <span className={`font-mono font-bold ${degradationPercent > 0 ? 'text-[#DA303E]' : 'text-[#00B14F]'}`}>
+             {degradationPercent}%
+           </span>
         </div>
         
         {/* AC Toggle */}
