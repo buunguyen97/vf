@@ -224,6 +224,39 @@ router.post('/optimal-route', async (req, res) => {
        chargingStops.push({ stopNumber: 1, stations: optimalStations });
     }
 
+    if (matchingStations.length === 0) {
+      const fallbackStations = candidateStations
+        .map(st => {
+          const batteryNeeded = kmToBatteryPct(st.distanceFromStartKm);
+          const batteryOnArrival = currentBattery - batteryNeeded;
+          return {
+            ...st,
+            batteryAtStation: Math.round(batteryOnArrival),
+            sweetSpotGap: Math.abs(batteryOnArrival - sweetSpotMax),
+            score: (Math.abs(batteryOnArrival - sweetSpotMax) * -10) + st.power_kw - (st.detourKm * 80),
+          };
+        })
+        .filter(st => st.batteryAtStation >= minBatteryPct)
+        .sort((a, b) => {
+          if (a.sweetSpotGap !== b.sweetSpotGap) return a.sweetSpotGap - b.sweetSpotGap;
+          if (a.detourKm !== b.detourKm) return a.detourKm - b.detourKm;
+          return b.power_kw - a.power_kw;
+        })
+        .slice(0, 3);
+
+      if (fallbackStations.length > 0) {
+        fallbackStations.forEach((st, idx) => {
+          st.isOptimal = true;
+          st.stopNumber = 1;
+          st.isRecommended = idx === 0;
+          st.isFallbackSuggested = true;
+          st.alternativeIndex = idx;
+          optimalStations.push(st);
+        });
+        chargingStops.push({ stopNumber: 1, stations: optimalStations });
+      }
+    }
+
     let insufficientBattery = false;
     let emergencyStation = null;
     const canReachDestination = (currentBattery - kmToBatteryPct(totalDistanceKm)) >= minBatteryPct;
@@ -241,20 +274,13 @@ router.post('/optimal-route', async (req, res) => {
           })
           .filter(st => st.batteryAtStation >= 5)
           .sort((a, b) => b.score - a.score)
-          .slice(0, 3);
+          .slice(0, 1);
 
         if (reachableFallbackStations.length > 0) {
-          reachableFallbackStations.forEach((st, idx) => {
-            st.isOptimal = true;
-            st.stopNumber = 1;
-            st.isRecommended = idx === 0;
-            st.alternativeIndex = idx;
-            st.isEmergency = true;
-            optimalStations.push(st);
-          });
-
-          chargingStops.push({ stopNumber: 1, stations: reachableFallbackStations });
-          emergencyStation = reachableFallbackStations[0];
+          emergencyStation = {
+            ...reachableFallbackStations[0],
+            isEmergency: true,
+          };
         }
 
         insufficientBattery = true;

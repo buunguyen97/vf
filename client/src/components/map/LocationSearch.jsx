@@ -11,6 +11,7 @@ export default function LocationSearch({
   showLocateButton = false,
   onLocateMe,
   readOnly = false,
+  compact = false,
 }) {
   const [query, setQuery] = useState(defaultDisplay);
   const [results, setResults] = useState([]);
@@ -95,8 +96,8 @@ export default function LocationSearch({
   };
 
   return (
-    <div className={`relative rounded-xl border border-white/10 bg-white/5 p-3 shadow-lg backdrop-blur-2xl md:p-4 ${results.length > 0 ? 'z-[200]' : 'z-50'}`}>
-      <h2 className="mb-3 flex items-center justify-between text-xs font-bold uppercase tracking-wide text-white/90">
+    <div className={`relative rounded-xl border border-white/10 bg-[#111111] shadow-lg ${compact ? 'p-2.5 md:p-3' : 'p-3 md:p-4'} ${results.length > 0 ? 'z-[200]' : 'z-50'}`}>
+      <h2 className={`flex items-center justify-between font-bold uppercase tracking-wide text-white/90 ${compact ? 'mb-2 text-[11px]' : 'mb-3 text-xs'}`}>
         <span className="flex items-center gap-2">
           {title}
           {isCurrentLocation && (
@@ -110,7 +111,7 @@ export default function LocationSearch({
             <button
               type="button"
               onClick={handleLocateMe}
-              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-[#00B14F]/20 bg-[#00B14F]/10 px-2.5 py-1 text-[10px] font-medium normal-case tracking-normal text-[#00B14F] transition-colors hover:bg-[#00B14F]/20"
+              className={`flex cursor-pointer items-center gap-1.5 rounded-full border border-[#00B14F]/20 bg-[#00B14F]/10 font-medium normal-case tracking-normal text-[#00B14F] transition-colors hover:bg-[#00B14F]/20 ${compact ? 'px-2 py-0.5 text-[9px]' : 'px-2.5 py-1 text-[10px]'}`}
             >
               <Crosshair className="h-3 w-3" />
               Chọn vị trí hiện tại
@@ -125,8 +126,10 @@ export default function LocationSearch({
           type="text"
           placeholder={placeholder}
           readOnly={readOnly}
-          className={`w-full rounded-lg border py-2 pl-3 text-sm font-medium text-white transition-all placeholder:text-gray-600 focus:bg-black/60 focus:outline-none focus:ring-1 focus:border-transparent ${
-            readOnly ? 'cursor-text select-all pr-20' : 'pr-10'
+          className={`w-full rounded-lg border font-medium text-white transition-all placeholder:text-gray-600 focus:bg-black/60 focus:outline-none focus:ring-1 focus:border-transparent ${
+            compact ? 'py-1.5 pl-2.5 text-[12px]' : 'py-2 pl-3 text-sm'
+          } ${
+            readOnly ? (compact ? 'cursor-text select-all truncate pr-16' : 'cursor-text select-all pr-20') : 'pr-10'
           } ${isCurrentLocation ? 'border-[#00B14F]/30 bg-[#00B14F]/5' : 'border-white/10 bg-black/40'}`}
           style={{ '--tw-ring-color': iconColor }}
           value={query}
@@ -171,14 +174,14 @@ export default function LocationSearch({
         )}
       </form>
 
-      {readOnly && (
+      {readOnly && !compact && (
         <p className="mt-2 text-[10px] text-white/35">
           Ô này chỉ hiển thị tọa độ để sao chép, không chỉnh sửa trực tiếp.
         </p>
       )}
 
       {results.length > 0 && (
-        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[100] max-h-60 origin-top overflow-y-auto rounded-xl border border-white/10 bg-[#0A0A0A]/95 shadow-[0_20px_50px_rgba(0,0,0,0.5)] backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[100] max-h-60 origin-top overflow-y-auto rounded-xl border border-white/10 bg-[#0A0A0A] shadow-[0_20px_50px_rgba(0,0,0,0.5)] animate-in fade-in zoom-in-95 duration-200">
           {results.map((place, idx) => (
             <button
               key={idx}

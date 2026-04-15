@@ -19,6 +19,10 @@ function getTrafficJamPenaltyPercent(trafficJamMinutes = 0) {
   }
 }
 
+function softenFactor(factor = 1) {
+  return 1 + ((factor - 1) / 2);
+}
+
 function estimateRange({
   batteryPercent,
   batteryCapacityKwh,
@@ -30,52 +34,57 @@ function estimateRange({
   trafficJam,
 }) {
   let consumption = consumptionOverride || baseConsumption;
+  let temperatureFactor = 1;
+  let speedFactor = 1;
 
   if (acOn) {
     if (temperature >= 40) {
-      consumption *= 1.2;
+      temperatureFactor = 1.1;
     } else if (temperature >= 35) {
-      consumption *= 1.15;
+      temperatureFactor = 1.075;
     } else if (temperature >= 30) {
-      consumption *= 1.08;
+      temperatureFactor = 1.04;
     } else if (temperature >= 25) {
-      consumption *= 1.03;
+      temperatureFactor = 1.015;
     } else if (temperature >= 15) {
-      consumption *= 1.01;
+      temperatureFactor = 1.005;
     } else if (temperature >= 5) {
-      consumption *= 1.25;
+      temperatureFactor = 1.125;
     } else if (temperature >= -5) {
-      consumption *= 1.35;
+      temperatureFactor = 1.175;
     } else {
-      consumption *= 1.45;
+      temperatureFactor = 1.225;
     }
   } else if (temperature >= 40) {
-    consumption *= 1.08;
+    temperatureFactor = 1.04;
   } else if (temperature >= 35) {
-    consumption *= 1.05;
+    temperatureFactor = 1.025;
   } else if (temperature >= 15 && temperature <= 30) {
-    consumption *= 1.0;
+    temperatureFactor = 1.0;
   } else if (temperature >= 5) {
-    consumption *= 1.1;
+    temperatureFactor = 1.05;
   } else if (temperature >= -5) {
-    consumption *= 1.2;
+    temperatureFactor = 1.1;
   } else {
-    consumption *= 1.3;
+    temperatureFactor = 1.15;
   }
 
   if (speed >= 120) {
-    consumption *= 1.35;
+    speedFactor = 1.175;
   } else if (speed >= 100) {
-    consumption *= 1.22;
+    speedFactor = 1.11;
   } else if (speed >= 80) {
-    consumption *= 1.1;
+    speedFactor = 1.05;
   } else if (speed >= 60) {
-    consumption *= 1.0;
+    speedFactor = 1.0;
   } else if (speed >= 40) {
-    consumption *= 0.95;
+    speedFactor = 0.975;
   } else {
-    consumption *= 0.92;
+    speedFactor = 0.96;
   }
+
+  consumption *= softenFactor(temperatureFactor);
+  consumption *= softenFactor(speedFactor);
 
   const trafficJamPenaltyPercent = getTrafficJamPenaltyPercent(trafficJam);
   consumption *= 1 + trafficJamPenaltyPercent / 100;

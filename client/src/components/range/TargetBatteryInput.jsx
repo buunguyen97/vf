@@ -1,7 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
-import { Target } from 'lucide-react';
+import { useRef, useState, useEffect } from 'react';
+import { ShieldCheck } from 'lucide-react';
 
-export default function TargetBatteryInput({ targetBatteryPercent, setTargetBatteryPercent }) {
+export default function TargetBatteryInput({
+  targetBatteryPercent,
+  setTargetBatteryPercent,
+}) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef(null);
@@ -19,9 +22,9 @@ export default function TargetBatteryInput({ targetBatteryPercent, setTargetBatt
   };
 
   const handleEditConfirm = () => {
-    const val = parseInt(editValue);
-    if (!isNaN(val)) {
-      setTargetBatteryPercent(Math.max(10, Math.min(50, val)));
+    const value = parseInt(editValue, 10);
+    if (!Number.isNaN(value)) {
+      setTargetBatteryPercent(Math.max(10, Math.min(50, value)));
     }
     setIsEditing(false);
   };
@@ -32,16 +35,19 @@ export default function TargetBatteryInput({ targetBatteryPercent, setTargetBatt
   };
 
   return (
-    <div className="bg-white/5 backdrop-blur-2xl rounded-xl p-3 md:p-3.5 border border-white/10 shadow-lg transition-all hover:bg-white/[0.07] relative overflow-hidden">
-      
-      <div className="absolute -right-8 -bottom-8 w-20 h-20 bg-[#1464F4]/20 rounded-full blur-[20px] pointer-events-none"></div>
+    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#111111] p-3 shadow-lg transition-colors hover:bg-[#151515] md:p-3.5">
+      <div className="relative z-10 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-white/80 md:text-xs">
+            <ShieldCheck className="h-3.5 w-3.5 text-[#1464F4]" /> Ngưỡng pin tối thiểu
+          </h2>
+          <p className="mt-1 text-[10px] text-white/45">
+            Giữ lại tối thiểu {targetBatteryPercent}% pin khi đến trạm hoặc điểm đến.
+          </p>
+        </div>
 
-      <div className="flex justify-between items-center mb-2 relative z-10">
-        <h2 className="text-[11px] md:text-xs font-bold tracking-wide text-white/80 uppercase flex items-center gap-1.5">
-          <Target className="w-3.5 h-3.5 text-[#1464F4]" /> Ngưỡng pin tối thiểu
-        </h2>
         {isEditing ? (
-          <div className="bg-[#1464F4]/10 border border-[#1464F4]/30 px-2 py-0.5 rounded-lg shadow-[0_0_10px_rgba(20,100,244,0.2)] flex items-center gap-1">
+          <div className="flex items-center gap-1 rounded-lg border border-[#1464F4]/30 bg-[#1464F4]/10 px-2 py-0.5 shadow-[0_0_10px_rgba(20,100,244,0.2)]">
             <input
               ref={inputRef}
               type="number"
@@ -51,38 +57,39 @@ export default function TargetBatteryInput({ targetBatteryPercent, setTargetBatt
               onChange={(e) => setEditValue(e.target.value)}
               onBlur={handleEditConfirm}
               onKeyDown={handleKeyDown}
-              className="w-10 text-right text-sm font-bold font-mono bg-transparent border-none text-[#1464F4] outline-none appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              className="w-10 appearance-none border-none bg-transparent text-right font-mono text-sm font-bold text-[#1464F4] outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             />
-            <span className="text-sm font-bold font-mono text-[#1464F4]">%</span>
+            <span className="font-mono text-sm font-bold text-[#1464F4]">%</span>
           </div>
         ) : (
-          <div
+          <button
+            type="button"
             onClick={handleEditStart}
-            className="bg-[#1464F4]/10 border border-[#1464F4]/30 px-2 py-0.5 rounded-lg shadow-[0_0_10px_rgba(20,100,244,0.2)] cursor-pointer hover:bg-[#1464F4]/20 transition-colors"
+            className="rounded-lg border border-[#1464F4]/30 bg-[#1464F4]/10 px-2 py-0.5 shadow-[0_0_10px_rgba(20,100,244,0.2)] transition-colors hover:bg-[#1464F4]/20"
             title="Nhấn để nhập tay"
           >
-            <span className="text-sm font-bold font-mono text-[#1464F4]">{targetBatteryPercent}%</span>
-          </div>
+            <span className="font-mono text-sm font-bold text-[#1464F4]">{targetBatteryPercent}%</span>
+          </button>
         )}
       </div>
-      
-      <div className="relative z-10 pb-1">
-        <input 
-          type="range" 
-          min="10" 
-          max="50" 
+
+      <div className="relative z-10 pb-1 pt-3">
+        <input
+          type="range"
+          min="10"
+          max="50"
           step="1"
-          value={targetBatteryPercent} 
-          onChange={(e) => setTargetBatteryPercent(parseInt(e.target.value))}
-          className="w-full h-1.5 rounded-full appearance-none cursor-pointer outline-none bg-white/10 accent-[#1464F4]"
+          value={targetBatteryPercent}
+          onChange={(e) => setTargetBatteryPercent(parseInt(e.target.value, 10))}
+          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-[#1464F4] outline-none"
           style={{
-             background: `linear-gradient(to right, #1464F4 0%, #1464F4 ${((targetBatteryPercent - 10) / 40) * 100}%, rgba(255,255,255,0.1) ${((targetBatteryPercent - 10) / 40) * 100}%, rgba(255,255,255,0.1) 100%)`
+            background: `linear-gradient(to right, #1464F4 0%, #1464F4 ${((targetBatteryPercent - 10) / 40) * 100}%, rgba(255,255,255,0.1) ${((targetBatteryPercent - 10) / 40) * 100}%, rgba(255,255,255,0.1) 100%)`,
           }}
         />
-        <div className="flex justify-between mt-1.5 text-[9px] md:text-[10px] font-bold text-white/40 uppercase tracking-widest">
-          <span>Kháng (10%)</span>
-          <span className="text-[#1464F4]">Lý tưởng (25%)</span>
-          <span>Dư dả (50%)</span>
+        <div className="mt-1.5 flex justify-between text-[9px] font-bold uppercase tracking-widest text-white/40 md:text-[10px]">
+          <span>10%</span>
+          <span className="text-[#1464F4]">30%</span>
+          <span>50%</span>
         </div>
       </div>
     </div>

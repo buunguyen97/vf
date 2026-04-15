@@ -5,7 +5,7 @@ const { estimateRange } = require('../services/rangeEngine');
 
 router.post('/check-reachability', async (req, res) => {
   try {
-    const { currentLocation, destination, batteryPercent, vehicleId, temperature, speed, acOn, trafficJam, consumptionWhKm } = req.body;
+    const { currentLocation, destination, batteryPercent, targetBattery, vehicleId, temperature, speed, acOn, trafficJam, consumptionWhKm } = req.body;
 
     if (!currentLocation || !destination || !batteryPercent || !vehicleId) {
       return res.status(400).json({ error: 'currentLocation, destination, batteryPercent and vehicleId are required' });
@@ -56,19 +56,21 @@ router.post('/check-reachability', async (req, res) => {
     }
 
     // 3. Determine if reachable
-    const canReach = estimatedRangeKm >= distanceKm;
+    const minBatteryPercent = Math.max(targetBattery || 0, 5);
     
     // 4. Calculate remaining battery
     const energyUsedWh = distanceKm * adjustedConsumptionWhKm;
     const energyUsedKwh = energyUsedWh / 1000;
     const batteryUsedPercent = (energyUsedKwh / vehicle.battery_capacity_kwh) * 100;
     const batteryLeftPercent = Math.max(0, batteryPercent - batteryUsedPercent);
+    const canReach = batteryLeftPercent >= minBatteryPercent;
 
     res.json({
       canReach,
       distanceKm: Math.round(distanceKm * 10) / 10,
       estimatedRangeKm,
-      batteryLeftPercent: Math.round(batteryLeftPercent)
+      batteryLeftPercent: Math.round(batteryLeftPercent),
+      minBatteryPercent,
     });
 
   } catch (error) {

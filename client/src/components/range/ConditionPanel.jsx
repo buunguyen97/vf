@@ -78,6 +78,10 @@ function getTrafficJamPenaltyPercent(trafficJam) {
   }
 }
 
+function softenFactor(factor = 1) {
+  return 1 + ((factor - 1) / 2);
+}
+
 export default function ConditionPanel({ conditions, setConditions, locationName }) {
   const speed = conditions.speed;
   const temp = conditions.temperature;
@@ -99,16 +103,18 @@ export default function ConditionPanel({ conditions, setConditions, locationName
   else if (temp >= 10 && temp <= 19) tempFactor = 1.08;
   else tempFactor = 1.15;
 
+  const softenedSpeedFactor = softenFactor(speedFactor);
+  const softenedTempFactor = softenFactor(tempFactor);
   const acFactor = acOn ? 1.05 : 1.0;
   const trafficJamPenalty = getTrafficJamPenaltyPercent(trafficJam);
 
   const degradationPercent = Math.max(
     0,
-    Number((((speedFactor * tempFactor * acFactor) - 1) * 100 / 2.5 + trafficJamPenalty).toFixed(1)),
+    Number((((softenedSpeedFactor * softenedTempFactor * acFactor) - 1) * 100 / 2.5 + trafficJamPenalty).toFixed(1)),
   );
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-white/5 p-3 shadow-lg backdrop-blur-2xl md:p-3.5">
+    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#111111] p-3 shadow-lg md:p-3.5">
       <h2 className="mb-2.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-white/80 md:text-xs">
         <Settings2 className="h-3.5 w-3.5 text-white/60" /> Điều Kiện Lái Xe
       </h2>

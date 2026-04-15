@@ -19,7 +19,7 @@ export default function VehicleSelector({ vehicles, selectedVehicleId, onSelect 
   }, []);
 
   return (
-    <div className="bg-white/5 backdrop-blur-2xl rounded-xl p-3 md:p-3.5 border border-white/10 shadow-lg relative z-40" ref={dropdownRef}>
+    <div className="bg-[#111111] rounded-xl p-3 md:p-3.5 border border-white/10 shadow-lg relative z-40" ref={dropdownRef}>
       <h2 className="text-[11px] md:text-xs font-bold text-white/80 mb-2.5 uppercase tracking-wide flex items-center gap-1.5">
         <Car className="w-3.5 h-3.5 text-white/60" /> Dòng Xe Điện VinFast
       </h2>
@@ -45,7 +45,7 @@ export default function VehicleSelector({ vehicles, selectedVehicleId, onSelect 
 
         {/* Dropdown Menu */}
         {isOpen && (
-          <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-[#0A0A0A]/95 backdrop-blur-xl border border-white/10 rounded-xl overflow-y-auto max-h-60 z-[100] shadow-[0_20px_50px_rgba(0,0,0,0.5)] animate-in fade-in zoom-in-95 duration-200">
+          <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-[#0A0A0A] border border-white/10 rounded-xl overflow-y-auto max-h-60 z-[100] shadow-[0_20px_50px_rgba(0,0,0,0.5)] animate-in fade-in zoom-in-95 duration-200">
             {vehicles.map(v => (
               <button
                 key={v.id}

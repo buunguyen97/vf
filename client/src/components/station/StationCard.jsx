@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Coffee, ExternalLink, MapPinned, Zap } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Coffee, ExternalLink, MapPinned, Route, Zap } from 'lucide-react';
 
-export default function StationCard({ station, reachability, onClose }) {
+export default function StationCard({ station, reachability, routeInfo, onClose }) {
   const [showFutureAmenities, setShowFutureAmenities] = useState(false);
 
   useEffect(() => {
@@ -42,6 +42,25 @@ export default function StationCard({ station, reachability, onClose }) {
           </div>
         </div>
 
+        {routeInfo && (
+          <div className="rounded-xl border border-[#1464F4]/15 bg-[#1464F4]/6 p-3">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-[#1464F4]">
+              <Route className="h-3.5 w-3.5" />
+              Quãng đường trên tuyến
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg bg-white px-3 py-2 shadow-sm">
+                <p className="text-[10px] uppercase tracking-wide text-gray-400">Đến trạm</p>
+                <p className="mt-1 text-lg font-bold text-gray-900">{routeInfo.distanceToStationKm} km</p>
+              </div>
+              <div className="rounded-lg bg-[#e0f2fe] px-3 py-2 shadow-sm">
+                <p className="text-[10px] uppercase tracking-wide text-sky-600/70">Đến điểm đến</p>
+                <p className="mt-1 text-lg font-bold text-sky-800">{routeInfo.distanceToDestinationKm} km</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {reachability ? (
           <div className={`rounded-xl border p-3 md:p-4 ${reachability.canReach ? 'border-[#00B14F]/20 bg-[#00B14F]/10' : 'border-[#DA303E]/20 bg-[#DA303E]/10'}`}>
             <div className="flex items-start gap-3">
@@ -59,6 +78,9 @@ export default function StationCard({ station, reachability, onClose }) {
                     {reachability.fromRoutePlanner ? (
                       <>
                         Pin dự kiến chặng: <span className="font-bold text-black">{reachability.batteryLeftPercent}%</span>
+                        {reachability.minBatteryPercent ? (
+                          <span className="text-gray-600">, giữ trên ngưỡng an toàn {reachability.minBatteryPercent}%.</span>
+                        ) : null}
                       </>
                     ) : (
                       <>

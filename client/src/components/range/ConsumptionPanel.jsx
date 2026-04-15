@@ -112,7 +112,7 @@ export default function ConsumptionPanel({ conditions, setConditions, vehicles, 
   };
 
   return (
-    <div className="bg-white/5 backdrop-blur-2xl rounded-xl p-3 md:p-3.5 border border-white/10 shadow-lg relative overflow-hidden">
+    <div className="bg-[#111111] rounded-xl p-3 md:p-3.5 border border-white/10 shadow-lg relative overflow-hidden">
       {/* Header */}
       <div className="flex justify-between items-center mb-2.5">
         <h2 className="text-[11px] md:text-xs font-bold text-white/80 uppercase tracking-wide flex items-center gap-1.5">

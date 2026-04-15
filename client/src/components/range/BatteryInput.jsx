@@ -44,7 +44,7 @@ export default function BatteryInput({ batteryPercent, setBatteryPercent }) {
   }
 
   return (
-    <div className="bg-white/5 backdrop-blur-2xl rounded-xl p-3 md:p-3.5 border border-white/10 shadow-lg transition-all hover:bg-white/[0.07]">
+    <div className="bg-[#111111] rounded-xl p-3 md:p-3.5 border border-white/10 shadow-lg transition-colors hover:bg-[#151515]">
       <div className="flex justify-between items-center mb-2">
         <h2 className="text-[11px] md:text-xs font-bold tracking-wide text-white/80 uppercase flex items-center gap-1.5">
           <BatteryCharging className="w-3.5 h-3.5 text-white/60" /> Mức Pin Hiện Tại
