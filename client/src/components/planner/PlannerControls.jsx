@@ -24,6 +24,7 @@ export default function PlannerControls({
   onDestinationSelect,
   onParsedLink,
   onSuggestStations,
+  isRouting,
 }) {
   return (
     <div className="relative z-10 space-y-2">
@@ -54,7 +55,7 @@ export default function PlannerControls({
 
       <div className="grid grid-cols-2 gap-2">
         <LocationSearch
-          title="Điểm Xuất Phát"
+          title="Điểm Đi"
           placeholder="Vị trí hiện tại..."
           iconColor="#00B14F"
           onLocationSelect={onOriginSelect}
@@ -82,16 +83,26 @@ export default function PlannerControls({
         locationName={locationName}
       />
 
-      <div className="sticky bottom-0 z-20 pb-1 pt-2">
+      <div className="sticky bottom-0 z-[120] pb-1 pt-2">
         <div className="rounded-2xl border border-white/10 bg-[#050505]/98 p-2 shadow-[0_-12px_30px_rgba(0,0,0,0.35)]">
           <button
             onClick={onSuggestStations}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#00B14F] to-[#008A3D] px-4 py-3.5 font-bold text-white shadow-[0_8px_20px_rgba(0,177,79,0.3)] transition-colors hover:from-[#00C259] hover:to-[#00B14F]"
+            disabled={isRouting}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#00B14F] to-[#008A3D] px-4 py-3.5 font-bold text-white shadow-[0_8px_20px_rgba(0,177,79,0.3)] transition-colors hover:from-[#00C259] hover:to-[#00B14F] disabled:cursor-wait disabled:opacity-85"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-            </svg>
-            GỢI Ý TRẠM SẠC
+            {isRouting ? (
+              <>
+                <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white/35 border-t-white"></span>
+                ĐANG GỢI Ý TRẠM SẠC
+              </>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                </svg>
+                GỢI Ý TRẠM SẠC
+              </>
+            )}
           </button>
 
           <div className="mt-2 rounded-xl border border-[#22c55e]/20 bg-[#22c55e]/8 px-3 py-2 text-[11px] text-white/70">

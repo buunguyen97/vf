@@ -391,6 +391,7 @@ function App() {
         onDestinationSelect={handleDestinationSelect}
         onParsedLink={handleParsedLink}
         onSuggestStations={handleSuggestStations}
+        isRouting={isRouting}
       />
     </div>
   );

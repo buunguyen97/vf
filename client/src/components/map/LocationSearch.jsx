@@ -96,7 +96,7 @@ export default function LocationSearch({
   };
 
   return (
-    <div className={`relative rounded-xl border border-white/10 bg-[#111111] shadow-lg ${compact ? 'p-2.5 md:p-3' : 'p-3 md:p-4'} ${results.length > 0 ? 'z-[200]' : 'z-50'}`}>
+    <div className={`relative rounded-xl border border-white/10 bg-[#111111] shadow-lg ${compact ? 'p-2.5 md:p-3' : 'p-3 md:p-4'} ${results.length > 0 ? 'z-[200]' : 'z-10'}`}>
       <h2 className={`flex items-center justify-between font-bold uppercase tracking-wide text-white/90 ${compact ? 'mb-2 text-[11px]' : 'mb-3 text-xs'}`}>
         <span className="flex items-center gap-2">
           {title}
