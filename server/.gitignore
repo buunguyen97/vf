@@ -1,5 +1,5 @@
 node_modules
-*.db
+# *.db  (Temporarily allowed to push station data)
 *.db-shm
 *.db-wal
 *.sqlite
