@@ -1,16 +1,25 @@
-import { useState, useEffect, useRef } from 'react';
-import { Search, MapPin, Crosshair } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, Copy, Crosshair, MapPin, Search } from 'lucide-react';
 import { evApi } from '../../services/api';
 
-export default function LocationSearch({ title, placeholder, iconColor = "#1464F4", onLocationSelect, defaultDisplay = '', showLocateButton = false, onLocateMe }) {
+export default function LocationSearch({
+  title,
+  placeholder,
+  iconColor = '#1464F4',
+  onLocationSelect,
+  defaultDisplay = '',
+  showLocateButton = false,
+  onLocateMe,
+  readOnly = false,
+}) {
   const [query, setQuery] = useState(defaultDisplay);
   const [results, setResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedDisplay, setSelectedDisplay] = useState(defaultDisplay);
   const [isCurrentLocation, setIsCurrentLocation] = useState(!!defaultDisplay);
-  const initializedRef = useRef(false);
+  const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef(null);
 
-  // Sync when defaultDisplay changes
   useEffect(() => {
     if (defaultDisplay !== undefined && defaultDisplay !== query) {
       setQuery(defaultDisplay);
@@ -36,10 +45,16 @@ export default function LocationSearch({ title, placeholder, iconColor = "#1464F
       } finally {
         setIsSearching(false);
       }
-    }, 500); 
+    }, 500);
 
     return () => clearTimeout(debounceTimer);
   }, [query, selectedDisplay]);
+
+  useEffect(() => () => {
+    if (copyTimerRef.current) {
+      clearTimeout(copyTimerRef.current);
+    }
+  }, []);
 
   const searchLocation = (e) => {
     e.preventDefault();
@@ -48,7 +63,7 @@ export default function LocationSearch({ title, placeholder, iconColor = "#1464F
   const handleSelect = (place) => {
     const lat = parseFloat(place.lat);
     const lon = parseFloat(place.lon);
-    
+
     onLocationSelect([lat, lon], place.display_name);
     setResults([]);
     setSelectedDisplay(place.display_name);
@@ -66,76 +81,117 @@ export default function LocationSearch({ title, placeholder, iconColor = "#1464F
     }
   };
 
+  const handleCopy = async () => {
+    if (!query) return;
+
+    try {
+      await navigator.clipboard.writeText(query);
+      setCopied(true);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1600);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   return (
-    <div className={`bg-white/5 backdrop-blur-2xl rounded-xl p-3 md:p-4 border border-white/10 shadow-lg relative ${results.length > 0 ? 'z-[200]' : 'z-50'}`}>
-      <h2 className="text-xs font-bold text-white/90 mb-3 uppercase tracking-wide flex justify-between items-center">
+    <div className={`relative rounded-xl border border-white/10 bg-white/5 p-3 shadow-lg backdrop-blur-2xl md:p-4 ${results.length > 0 ? 'z-[200]' : 'z-50'}`}>
+      <h2 className="mb-3 flex items-center justify-between text-xs font-bold uppercase tracking-wide text-white/90">
         <span className="flex items-center gap-2">
           {title}
           {isCurrentLocation && (
-            <span className="text-[10px] font-medium text-[#00B14F] bg-[#00B14F]/15 px-2 py-0.5 rounded-full normal-case tracking-normal animate-pulse">
+            <span className="rounded-full bg-[#00B14F]/15 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-[#00B14F] animate-pulse">
               GPS
             </span>
           )}
         </span>
-        {showLocateButton && !isCurrentLocation ? (
-          <button
-            type="button"
-            onClick={handleLocateMe}
-            className="flex items-center gap-1.5 text-[10px] font-medium text-[#00B14F] bg-[#00B14F]/10 hover:bg-[#00B14F]/20 px-2.5 py-1 rounded-full normal-case tracking-normal transition-colors cursor-pointer border border-[#00B14F]/20"
-          >
-            <Crosshair className="w-3 h-3" />
-            Chọn vị trí hiện tại
-          </button>
-        ) : (
-          <MapPin className="w-3.5 h-3.5 text-white/50" />
-        )}
+        <div className="flex items-center gap-2">
+          {showLocateButton && !isCurrentLocation && (
+            <button
+              type="button"
+              onClick={handleLocateMe}
+              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-[#00B14F]/20 bg-[#00B14F]/10 px-2.5 py-1 text-[10px] font-medium normal-case tracking-normal text-[#00B14F] transition-colors hover:bg-[#00B14F]/20"
+            >
+              <Crosshair className="h-3 w-3" />
+              Chọn vị trí hiện tại
+            </button>
+          )}
+          {!showLocateButton || isCurrentLocation ? <MapPin className="h-3.5 w-3.5 text-white/50" /> : null}
+        </div>
       </h2>
-      <form onSubmit={searchLocation} className="relative group">
-        <input 
-          type="text" 
+
+      <form onSubmit={searchLocation} className="group relative">
+        <input
+          type="text"
           placeholder={placeholder}
-          className={`w-full bg-black/40 border text-white rounded-lg py-2 pl-3 pr-10 focus:outline-none focus:ring-1 focus:bg-black/60 focus:border-transparent transition-all placeholder:text-gray-600 text-sm font-medium ${isCurrentLocation ? 'border-[#00B14F]/30 bg-[#00B14F]/5' : 'border-white/10'}`}
+          readOnly={readOnly}
+          className={`w-full rounded-lg border py-2 pl-3 text-sm font-medium text-white transition-all placeholder:text-gray-600 focus:bg-black/60 focus:outline-none focus:ring-1 focus:border-transparent ${
+            readOnly ? 'cursor-text select-all pr-20' : 'pr-10'
+          } ${isCurrentLocation ? 'border-[#00B14F]/30 bg-[#00B14F]/5' : 'border-white/10 bg-black/40'}`}
           style={{ '--tw-ring-color': iconColor }}
           value={query}
           onFocus={() => {
-            if (isCurrentLocation) {
+            if (isCurrentLocation && !readOnly) {
               setQuery('');
               setSelectedDisplay('');
               setIsCurrentLocation(false);
             }
           }}
           onChange={(e) => {
+            if (readOnly) return;
             setQuery(e.target.value);
             if (selectedDisplay && e.target.value !== selectedDisplay) {
               setSelectedDisplay('');
             }
           }}
         />
-        <div className="absolute right-1 top-1 bottom-1 flex items-center gap-0.5">
-          <div className="aspect-square h-full flex items-center justify-center bg-white/5 rounded-md transition-colors" style={{ backgroundColor: query ? `${iconColor}20` : '' }}>
-            {isSearching ? <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: iconColor }}></div> : <Search className="w-3.5 h-3.5 text-white/50 group-focus-within:text-white" />}
+
+        {readOnly ? (
+          <div className="absolute bottom-1 right-1 top-1 flex items-center">
+            <button
+              type="button"
+              onClick={handleCopy}
+              disabled={!query}
+              className="flex h-full items-center gap-1 rounded-md bg-white/6 px-2 text-[11px] font-semibold text-white/65 transition-colors hover:bg-white/12 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {copied ? <Check className="h-3.5 w-3.5 text-[#22c55e]" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? 'Đã chép' : 'Copy'}
+            </button>
           </div>
-        </div>
+        ) : (
+          <div className="absolute bottom-1 right-1 top-1 flex items-center gap-0.5">
+            <div className="flex aspect-square h-full items-center justify-center rounded-md bg-white/5 transition-colors" style={{ backgroundColor: query ? `${iconColor}20` : '' }}>
+              {isSearching ? (
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: iconColor }}></div>
+              ) : (
+                <Search className="h-3.5 w-3.5 text-white/50 group-focus-within:text-white" />
+              )}
+            </div>
+          </div>
+        )}
       </form>
 
-      {/* Dropdown Results */}
+      {readOnly && (
+        <p className="mt-2 text-[10px] text-white/35">
+          Ô này chỉ hiển thị tọa độ để sao chép, không chỉnh sửa trực tiếp.
+        </p>
+      )}
+
       {results.length > 0 && (
-        <div className="absolute top-[calc(100%+8px)] left-0 right-0 bg-[#0A0A0A]/95 backdrop-blur-xl border border-white/10 rounded-xl overflow-y-auto max-h-60 z-[100] shadow-[0_20px_50px_rgba(0,0,0,0.5)] transform origin-top animate-in fade-in zoom-in-95 duration-200">
-           {results.map((place, idx) => (
-             <button
-                key={idx}
-                type="button"
-                className="w-full text-left p-3 hover:bg-white/10 flex gap-3 text-xs transition-all border-b border-white/5 last:border-0 items-center overflow-hidden"
-                onClick={() => handleSelect(place)}
-             >
-                <div className="w-6 h-6 rounded-full bg-white/5 flex items-center justify-center shrink-0">
-                   <MapPin className="w-3 h-3" style={{ color: iconColor }} />
-                </div>
-                <span className="text-gray-300 line-clamp-2 leading-snug">
-                  {place.display_name}
-                </span>
-             </button>
-           ))}
+        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[100] max-h-60 origin-top overflow-y-auto rounded-xl border border-white/10 bg-[#0A0A0A]/95 shadow-[0_20px_50px_rgba(0,0,0,0.5)] backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200">
+          {results.map((place, idx) => (
+            <button
+              key={idx}
+              type="button"
+              className="flex w-full items-center gap-3 overflow-hidden border-b border-white/5 p-3 text-left text-xs transition-all last:border-0 hover:bg-white/10"
+              onClick={() => handleSelect(place)}
+            >
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/5">
+                <MapPin className="h-3 w-3" style={{ color: iconColor }} />
+              </div>
+              <span className="line-clamp-2 leading-snug text-gray-300">{place.display_name}</span>
+            </button>
+          ))}
         </div>
       )}
     </div>

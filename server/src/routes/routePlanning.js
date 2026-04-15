@@ -129,7 +129,8 @@ router.post('/optimal-route', async (req, res) => {
       consumptionOverride: conditions?.consumptionWhKm || null,
       temperature: conditions?.temperature || 32,
       speed: conditions?.speed || 60,
-      acOn: conditions?.acOn !== undefined ? conditions.acOn : true
+      acOn: conditions?.acOn !== undefined ? conditions.acOn : true,
+      trafficJam: conditions?.trafficJam || 0,
     });
 
     const energyCapacityWh = vehicle.battery_capacity_kwh * 1000;
@@ -228,6 +229,34 @@ router.post('/optimal-route', async (req, res) => {
     const canReachDestination = (currentBattery - kmToBatteryPct(totalDistanceKm)) >= minBatteryPct;
     
     if (matchingStations.length === 0 && !canReachDestination) {
+        const reachableFallbackStations = candidateStations
+          .map(st => {
+            const batteryNeeded = kmToBatteryPct(st.distanceFromStartKm);
+            const batteryOnArrival = currentBattery - batteryNeeded;
+            return {
+              ...st,
+              batteryAtStation: Math.round(batteryOnArrival),
+              score: (st.distanceFromStartKm * 6) + st.power_kw - (st.detourKm * 120),
+            };
+          })
+          .filter(st => st.batteryAtStation >= 5)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 3);
+
+        if (reachableFallbackStations.length > 0) {
+          reachableFallbackStations.forEach((st, idx) => {
+            st.isOptimal = true;
+            st.stopNumber = 1;
+            st.isRecommended = idx === 0;
+            st.alternativeIndex = idx;
+            st.isEmergency = true;
+            optimalStations.push(st);
+          });
+
+          chargingStops.push({ stopNumber: 1, stations: reachableFallbackStations });
+          emergencyStation = reachableFallbackStations[0];
+        }
+
         insufficientBattery = true;
     }
 

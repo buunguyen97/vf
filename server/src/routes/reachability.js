@@ -5,7 +5,7 @@ const { estimateRange } = require('../services/rangeEngine');
 
 router.post('/check-reachability', async (req, res) => {
   try {
-    const { currentLocation, destination, batteryPercent, vehicleId, temperature, speed, acOn, consumptionWhKm } = req.body;
+    const { currentLocation, destination, batteryPercent, vehicleId, temperature, speed, acOn, trafficJam, consumptionWhKm } = req.body;
 
     if (!currentLocation || !destination || !batteryPercent || !vehicleId) {
       return res.status(400).json({ error: 'currentLocation, destination, batteryPercent and vehicleId are required' });
@@ -26,7 +26,8 @@ router.post('/check-reachability', async (req, res) => {
       consumptionOverride: consumptionWhKm || null,
       temperature: temperature || 25,
       speed: speed || 60,
-      acOn: acOn !== undefined ? acOn : true
+      acOn: acOn !== undefined ? acOn : true,
+      trafficJam: trafficJam || 0,
     });
 
     // 2. Get REAL driving distance from OSRM

@@ -1,182 +1,120 @@
-import { useState, useEffect } from 'react';
-import { BatteryCharging, ExternalLink, Zap, AlertTriangle, CheckCircle2, Coffee, UtensilsCrossed, ShoppingBag, Store, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
-import { evApi } from '../../services/api';
-
-const AMENITY_EMOJI = {
-  restaurant: '🍽️', cafe: '☕', fast_food: '🍔',
-  convenience: '🏪', supermarket: '🛒'
-};
-const AMENITY_LABELS = {
-  restaurant: 'Nhà hàng', cafe: 'Café', fast_food: 'Đồ ăn nhanh',
-  convenience: 'Tiện lợi', supermarket: 'Siêu thị'
-};
+import { useEffect, useState } from 'react';
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Coffee, ExternalLink, MapPinned, Zap } from 'lucide-react';
 
 export default function StationCard({ station, reachability, onClose }) {
-  if (!station) return null;
+  const [showFutureAmenities, setShowFutureAmenities] = useState(false);
 
-  const [amenities, setAmenities] = useState(null);
-  const [loadingAmenities, setLoadingAmenities] = useState(false);
-  const [showAmenities, setShowAmenities] = useState(false);
-
-  // Reset amenities when station changes
   useEffect(() => {
-    setAmenities(null);
-    setShowAmenities(false);
-    setLoadingAmenities(false);
+    setShowFutureAmenities(false);
   }, [station?.id, station?.latitude, station?.longitude]);
 
-  const loadAmenities = async () => {
-    if (amenities) {
-      setShowAmenities(!showAmenities);
-      return;
-    }
-    setLoadingAmenities(true);
-    setShowAmenities(true);
-    try {
-      const data = await evApi.getNearbyAmenities(station.latitude, station.longitude, 500);
-      setAmenities(data);
-    } catch (err) {
-      console.error(err);
-      setAmenities([]);
-    } finally {
-      setLoadingAmenities(false);
-    }
-  };
+  if (!station) return null;
 
   return (
-    <div className="absolute top-[60px] md:top-4 right-2 md:right-4 left-2 md:left-auto md:w-[360px] z-[1000] bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden animate-in fade-in slide-in-from-bottom-5 md:slide-in-from-right text-gray-900 pointer-events-auto">
-      <div className="bg-[#1464F4] p-4 flex justify-between items-start text-white relative overflow-hidden">
-        <div className="absolute -right-4 -top-8 opacity-20 transform rotate-12">
-           <Zap className="w-32 h-32" />
+    <div className="pointer-events-auto absolute left-2 right-2 top-[60px] z-[1000] overflow-hidden rounded-2xl border border-gray-200 bg-white text-gray-900 shadow-2xl animate-in fade-in slide-in-from-bottom-5 md:left-auto md:right-4 md:top-4 md:w-[360px] md:slide-in-from-right">
+      <div className="relative flex items-start justify-between overflow-hidden bg-[#1464F4] p-4 text-white">
+        <div className="absolute -right-4 -top-8 rotate-12 opacity-20">
+          <Zap className="h-32 w-32" />
         </div>
         <div className="relative z-10 w-full pr-6">
-          <h3 className="font-bold text-lg leading-tight">{station.name}</h3>
-          <p className="opacity-80 text-xs mt-1 line-clamp-1">{station.city}</p>
+          <h3 className="text-lg font-bold leading-tight">{station.name}</h3>
+          <p className="mt-1 text-xs opacity-80">{station.city}</p>
         </div>
-        <button 
+        <button
           onClick={onClose}
-          className="absolute top-3 right-3 z-20 text-white/80 hover:text-white p-1 bg-black/10 rounded-full hover:bg-black/20 transition-colors"
+          className="absolute right-3 top-3 z-20 rounded-full bg-black/10 p-1 text-white/80 transition-colors hover:bg-black/20 hover:text-white"
         >
           ✕
         </button>
       </div>
-      
-      <div className="p-4 md:p-5 space-y-3 md:space-y-4 max-h-[60vh] overflow-y-auto">
-        {/* Basic Info */}
+
+      <div className="max-h-[60vh] space-y-3 overflow-y-auto p-4 md:space-y-4 md:p-5">
         <div>
-          <p className="text-sm text-gray-600 leading-snug line-clamp-2 md:line-clamp-none">{station.address}</p>
-          <div className="flex gap-2 mt-2">
-            <span className="flex items-center gap-1 text-xs font-semibold bg-[#1464F4]/10 text-[#1464F4] px-2.5 py-1 rounded-md">
-              <Zap className="w-3.5 h-3.5" />
+          <p className="text-sm leading-snug text-gray-600">{station.address}</p>
+          <div className="mt-2 flex gap-2">
+            <span className="flex items-center gap-1 rounded-md bg-[#1464F4]/10 px-2.5 py-1 text-xs font-semibold text-[#1464F4]">
+              <Zap className="h-3.5 w-3.5" />
               {station.power_kw} kW
             </span>
-            <span className="flex items-center gap-1 text-xs font-semibold bg-gray-100 text-gray-700 px-2.5 py-1 rounded-md">
+            <span className="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">
               {station.connector_type || 'CCS2'}
             </span>
           </div>
         </div>
 
-        {/* Reachability Status */}
         {reachability ? (
-          <div className={`p-3 md:p-4 rounded-xl border ${reachability.canReach ? 'bg-[#00B14F]/10 border-[#00B14F]/20' : 'bg-[#DA303E]/10 border-[#DA303E]/20'}`}>
+          <div className={`rounded-xl border p-3 md:p-4 ${reachability.canReach ? 'border-[#00B14F]/20 bg-[#00B14F]/10' : 'border-[#DA303E]/20 bg-[#DA303E]/10'}`}>
             <div className="flex items-start gap-3">
               {reachability.canReach ? (
-                 <CheckCircle2 className="w-5 h-5 text-[#00B14F] shrink-0 mt-0.5" />
+                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#00B14F]" />
               ) : (
-                 <AlertTriangle className="w-5 h-5 text-[#DA303E] shrink-0 mt-0.5" />
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#DA303E]" />
               )}
               <div>
-                <p className={`font-bold text-sm ${reachability.canReach ? 'text-[#007032]' : 'text-[#A0222C]'}`}>
+                <p className={`text-sm font-bold ${reachability.canReach ? 'text-[#007032]' : 'text-[#A0222C]'}`}>
                   {reachability.canReach ? 'Có thể đến nơi an toàn' : 'Không thể đến nơi'}
                 </p>
                 {reachability.canReach && (
-                  <p className="text-xs md:text-sm text-gray-700 mt-1">
-                    {reachability.fromRoutePlanner 
-                      ? <>Pin dự kiến chặng: <span className="font-bold text-black">{reachability.batteryLeftPercent}%</span></>
-                      : <>Còn khoảng <span className="font-bold text-black">{reachability.batteryLeftPercent}%</span> pin khi đến trạm này ({Math.round(reachability.distanceKm)} km).</>
-                    }
+                  <p className="mt-1 text-xs text-gray-700 md:text-sm">
+                    {reachability.fromRoutePlanner ? (
+                      <>
+                        Pin dự kiến chặng: <span className="font-bold text-black">{reachability.batteryLeftPercent}%</span>
+                      </>
+                    ) : (
+                      <>
+                        Còn khoảng <span className="font-bold text-black">{reachability.batteryLeftPercent}%</span> pin khi đến trạm này ({Math.round(reachability.distanceKm)} km).
+                      </>
+                    )}
                   </p>
                 )}
                 {!reachability.canReach && (
-                  <p className="text-xs md:text-sm text-gray-700 mt-1">
-                    Cần sạc ở trạm chiều gần hơn. Trạm này ở khoảng cách {Math.round(reachability.distanceKm)} km.
+                  <p className="mt-1 text-xs text-gray-700 md:text-sm">
+                    Cần sạc ở trạm gần hơn. Trạm này ở khoảng cách {Math.round(reachability.distanceKm)} km.
                   </p>
                 )}
               </div>
             </div>
           </div>
         ) : (
-          <div className="text-center p-4">
-             <div className="w-6 h-6 border-2 border-gray-300 border-t-[#1464F4] rounded-full animate-spin mx-auto"></div>
-             <p className="text-xs text-gray-500 mt-2">Đang phân tích...</p>
+          <div className="p-4 text-center">
+            <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-[#1464F4]"></div>
+            <p className="mt-2 text-xs text-gray-500">Đang phân tích...</p>
           </div>
         )}
 
-        {/* Nearby Amenities Section */}
-        <div className="border border-gray-100 rounded-xl overflow-hidden">
+        <div className="overflow-hidden rounded-xl border border-gray-100">
           <button
-            onClick={loadAmenities}
-            className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors"
+            onClick={() => setShowFutureAmenities((prev) => !prev)}
+            className="flex w-full items-center justify-between bg-gray-50 px-3 py-2.5 transition-colors hover:bg-gray-100"
           >
             <span className="flex items-center gap-2 text-xs font-semibold text-gray-600">
-              <Coffee className="w-3.5 h-3.5 text-[#8B5CF6]" />
-              Quán ăn & Café gần trạm
-              {amenities && (
-                <span className="bg-[#8B5CF6]/10 text-[#8B5CF6] px-1.5 py-0.5 rounded text-[10px] font-bold">{amenities.length}</span>
-              )}
+              <Coffee className="h-3.5 w-3.5 text-[#16a34a]" />
+              Quán ăn và Coffee xung quanh
             </span>
-            {loadingAmenities ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#8B5CF6]" />
-            ) : showAmenities ? (
-              <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+            {showFutureAmenities ? (
+              <ChevronUp className="h-3.5 w-3.5 text-gray-400" />
             ) : (
-              <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+              <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
             )}
           </button>
 
-          {showAmenities && loadingAmenities && (
-            <div className="p-3 flex items-center gap-2 justify-center">
-              <Loader2 className="w-4 h-4 animate-spin text-[#8B5CF6]" />
-              <span className="text-xs text-gray-400">Đang tìm...</span>
-            </div>
-          )}
-
-          {showAmenities && amenities && (
-            <div className="max-h-44 overflow-y-auto">
-              {amenities.length === 0 ? (
-                <p className="text-xs text-gray-400 italic p-3 text-center">Không tìm thấy quán ăn/café nào gần đây</p>
-              ) : (
-                <div className="divide-y divide-gray-50">
-                  {amenities.map((a, i) => (
-                    <a
-                      key={i}
-                      href={`https://www.google.com/maps/search/?api=1&query=${a.lat},${a.lng}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 transition-colors group/a"
-                    >
-                      <span className="text-base shrink-0">{AMENITY_EMOJI[a.type] || '📍'}</span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium text-gray-700 truncate group-hover/a:text-gray-900">{a.name}</p>
-                        <p className="text-[10px] text-gray-400">
-                          {AMENITY_LABELS[a.type] || a.type} • {a.distance >= 1000 ? `${(a.distance/1000).toFixed(1)}km` : `${a.distance}m`}
-                          {a.cuisine && ` • ${a.cuisine}`}
-                        </p>
-                      </div>
-                      <ExternalLink className="w-3 h-3 text-gray-300 group-hover/a:text-gray-500 shrink-0" />
-                    </a>
-                  ))}
-                </div>
-              )}
+          {showFutureAmenities && (
+            <div className="border-t border-gray-100 bg-white px-3 py-3">
+              <div className="flex items-start gap-2 rounded-lg border border-[#16a34a]/15 bg-[#16a34a]/5 px-3 py-2.5">
+                <MapPinned className="mt-0.5 h-4 w-4 shrink-0 text-[#16a34a]" />
+                <p className="text-xs leading-relaxed text-gray-600">
+                  Tính năng này sẽ ra mắt trong tương lai.
+                </p>
+              </div>
             </div>
           )}
         </div>
 
-        <button 
-          className="w-full flex items-center justify-center gap-2 bg-[#0A0A0A] hover:bg-black text-white font-medium py-3 rounded-xl transition-colors text-sm md:text-base shadow-lg"
+        <button
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0A0A0A] py-3 text-sm font-medium text-white shadow-lg transition-colors hover:bg-black"
           onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${station.latitude},${station.longitude}`, '_blank')}
         >
-          <ExternalLink className="w-4 h-4" /> Bắt đầu chỉ đường bằng Google Maps
+          <ExternalLink className="h-4 w-4" /> Bắt đầu đi với Google Map
         </button>
       </div>
     </div>
