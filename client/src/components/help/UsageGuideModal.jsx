@@ -31,15 +31,15 @@ export default function UsageGuideModal({ open, onClose }) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[2600] flex items-start justify-center overflow-y-auto bg-black/70 px-3 py-3 backdrop-blur-sm md:items-center md:py-4">
+    <div className="fixed inset-0 z-[2600] flex items-start justify-center overflow-y-auto bg-black/70 px-3 pb-[max(env(safe-area-inset-bottom),12px)] pt-[calc(env(safe-area-inset-top)+52px)] backdrop-blur-sm md:items-center md:px-3 md:py-4">
       <div
         className="absolute inset-0"
         onClick={onClose}
         aria-hidden="true"
       />
 
-      <div className="relative z-10 mt-[max(env(safe-area-inset-top),8px)] flex h-[min(90dvh,760px)] w-full max-w-[720px] flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#0B0B0B] shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-white/8 bg-[#0B0B0B] px-4 py-4 md:px-5">
+      <div className="relative z-10 flex h-[min(94dvh,860px)] w-full max-w-[720px] flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#0B0B0B] shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-white/8 bg-[#0B0B0B] px-4 pb-4 pt-5 md:px-5 md:pt-4">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#00B14F]/80 md:text-[11px]">
               Hướng dẫn nhanh
@@ -55,7 +55,7 @@ export default function UsageGuideModal({ open, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/6 text-white/70 transition-colors hover:bg-white/12 hover:text-white"
+            className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/6 text-white/70 transition-colors hover:bg-white/12 hover:text-white"
             aria-label="Đóng hướng dẫn"
           >
             <X className="h-5 w-5" />
