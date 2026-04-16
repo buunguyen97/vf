@@ -9,6 +9,8 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [guideOpen, setGuideOpen] = useState(false);
+  const [manualPasteOpen, setManualPasteOpen] = useState(false);
+  const [manualPasteValue, setManualPasteValue] = useState('');
 
   const handleParse = async () => {
     if (!urlState.trim()) {
@@ -59,6 +61,10 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
 
   const handlePaste = async () => {
     try {
+      if (!navigator.clipboard?.readText) {
+        throw new Error('clipboard_unavailable');
+      }
+
       const text = await navigator.clipboard.readText();
       if (!text?.trim()) {
         setError('Clipboard đang trống.');
@@ -69,8 +75,25 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
       setError('');
       setMessage('');
     } catch (err) {
-      setError('Không thể dán tự động trên thiết bị này. Hãy dán thủ công vào ô link.');
+      setManualPasteValue(urlState);
+      setManualPasteOpen(true);
+      setError('');
+      setMessage('Thiết bị này đang chặn dán tự động. Bạn chỉ cần dán link vào ô hỗ trợ rồi bấm Xong.');
     }
+  };
+
+  const handleManualPasteConfirm = () => {
+    const trimmed = manualPasteValue.trim();
+
+    if (!trimmed) {
+      setError('Vui lòng dán link Google Maps vào ô hỗ trợ.');
+      return;
+    }
+
+    setUrlState(trimmed);
+    setManualPasteOpen(false);
+    setError('');
+    setMessage('Đã nhận link. Bạn hãy bấm Phân tích.');
   };
 
   return (
@@ -144,6 +167,55 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
       </div>
 
       <UsageGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
+
+      {manualPasteOpen && (
+        <div className="fixed inset-0 z-[2550] flex items-end justify-center bg-black/65 p-3 md:items-center">
+          <div
+            className="absolute inset-0"
+            onClick={() => setManualPasteOpen(false)}
+            aria-hidden="true"
+          />
+
+          <div className="relative z-10 w-full max-w-[520px] rounded-[26px] border border-white/10 bg-[#0B0B0B] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#00B14F]/80">
+              Hỗ trợ dán link
+            </p>
+            <h3 className="mt-1 text-base font-bold text-white">
+              Trình duyệt đang chặn dán tự động
+            </h3>
+            <p className="mt-2 text-xs leading-5 text-white/62">
+              Hãy chạm giữ trong ô bên dưới, chọn <span className="font-semibold text-white">Dán</span>, rồi bấm{' '}
+              <span className="font-semibold text-white">Xong</span>.
+            </p>
+
+            <textarea
+              value={manualPasteValue}
+              onChange={(e) => setManualPasteValue(e.target.value)}
+              placeholder="Dán link Google Maps vào đây..."
+              autoFocus
+              rows={4}
+              className="mt-3 w-full rounded-2xl border border-white/10 bg-black/45 px-3 py-3 text-sm text-white outline-none transition-colors focus:border-[#1464F4]"
+            />
+
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setManualPasteOpen(false)}
+                className="flex-1 rounded-xl border border-white/10 bg-white/8 px-4 py-3 text-sm font-semibold text-white/80 transition-colors hover:bg-white/12 hover:text-white"
+              >
+                Huỷ
+              </button>
+              <button
+                type="button"
+                onClick={handleManualPasteConfirm}
+                className="flex-1 rounded-xl bg-[#1464F4] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#0f4eb8]"
+              >
+                Xong
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
