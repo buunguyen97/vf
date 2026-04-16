@@ -32,7 +32,6 @@ function App() {
     speed: 60,
     temperature: 32,
     acOn: true,
-    trafficJam: 0,
     consumptionWhKm: null,
   });
 

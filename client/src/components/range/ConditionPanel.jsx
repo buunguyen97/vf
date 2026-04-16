@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Clock3, Settings2, Thermometer, Wind } from 'lucide-react';
+import { Settings2, Thermometer, Wind } from 'lucide-react';
 
 function EditableBadge({ value, unit, min, max, step, onChange, className = '' }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -63,21 +63,6 @@ function EditableBadge({ value, unit, min, max, step, onChange, className = '' }
   );
 }
 
-function getTrafficJamPenaltyPercent(trafficJam) {
-  switch (trafficJam) {
-    case 15:
-      return 0.5;
-    case 30:
-      return 1;
-    case 45:
-      return 1.5;
-    case 60:
-      return 2;
-    default:
-      return 0;
-  }
-}
-
 function softenFactor(factor = 1) {
   return 1 + ((factor - 1) / 2);
 }
@@ -86,7 +71,6 @@ export default function ConditionPanel({ conditions, setConditions, locationName
   const speed = conditions.speed;
   const temp = conditions.temperature;
   const acOn = conditions.acOn;
-  const trafficJam = conditions.trafficJam || 0;
 
   let speedFactor = 1.0;
   if (speed <= 70) speedFactor = 1.0;
@@ -106,11 +90,10 @@ export default function ConditionPanel({ conditions, setConditions, locationName
   const softenedSpeedFactor = softenFactor(speedFactor);
   const softenedTempFactor = softenFactor(tempFactor);
   const acFactor = acOn ? 1.05 : 1.0;
-  const trafficJamPenalty = getTrafficJamPenaltyPercent(trafficJam);
 
   const degradationPercent = Math.max(
     0,
-    Number((((softenedSpeedFactor * softenedTempFactor * acFactor) - 1) * 100 / 2.5 + trafficJamPenalty).toFixed(1)),
+    Number((((softenedSpeedFactor * softenedTempFactor * acFactor) - 1) * 100 / 2.5).toFixed(1)),
   );
 
   return (
@@ -169,39 +152,6 @@ export default function ConditionPanel({ conditions, setConditions, locationName
             onChange={(e) => setConditions({ ...conditions, temperature: parseInt(e.target.value, 10) })}
             className="h-1 w-full appearance-none rounded-full bg-white/10 accent-[#1464F4] outline-none"
           />
-        </div>
-
-        <div>
-          <div className="mb-2 flex items-center justify-between text-[11px] font-medium text-white/70 md:text-xs">
-            <span className="flex items-center gap-1.5">
-              <Clock3 className="h-3.5 w-3.5 text-[#22c55e]" /> Kẹt Xe
-            </span>
-            <span className="rounded-full border border-[#22c55e]/25 bg-[#22c55e]/10 px-2 py-0.5 text-[10px] font-semibold text-[#86efac]">
-              {trafficJam === 0 ? 'Không cộng thêm' : `${trafficJam}p | +${trafficJamPenalty}%`}
-            </span>
-          </div>
-          <div className="grid grid-cols-5 gap-2">
-            {[0, 15, 30, 45, 60].map((minutes) => {
-              const active = trafficJam === minutes;
-              return (
-                <button
-                  key={minutes}
-                  type="button"
-                  onClick={() => setConditions({ ...conditions, trafficJam: minutes })}
-                  className={`rounded-lg border px-2 py-2 text-[11px] font-semibold transition-all ${
-                    active
-                      ? 'border-[#22c55e]/50 bg-[#22c55e]/15 text-[#bbf7d0]'
-                      : 'border-white/10 bg-black/25 text-white/55 hover:border-white/20 hover:text-white/80'
-                  }`}
-                >
-                  {minutes === 0 ? '0p' : `${minutes}p`}
-                </button>
-              );
-            })}
-          </div>
-          <p className="mt-2 text-[10px] leading-relaxed text-white/40">
-            Kẹt xe sẽ cộng thêm lần lượt 0.5%, 1%, 1.5% và 2% vào phần trừ hao tổng pin.
-          </p>
         </div>
 
         <div className="flex items-center justify-between rounded-lg border border-white/5 bg-black/30 px-2.5 py-2 text-[11px] md:text-xs">

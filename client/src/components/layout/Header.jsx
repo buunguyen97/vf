@@ -1,19 +1,21 @@
-import { Zap, MapPinned } from 'lucide-react';
+import { MapPinned } from 'lucide-react';
 
 export default function Header({ onOpenMap }) {
   return (
     <header className="bg-black border-b border-white/10 text-white p-3 md:p-4 z-[1000] relative shadow-lg">
       <div className="max-w-[1600px] mx-auto flex items-center justify-between">
         <div className="flex items-center gap-3 group cursor-pointer">
-          <div className="bg-gradient-to-br from-[#00B14F] to-[#1464F4] p-2 md:p-2.5 rounded-xl shadow-[0_0_20px_rgba(0,177,79,0.4)] transition-colors duration-300">
-            <Zap className="w-5 h-5 md:w-6 md:h-6 text-white" fill="white" />
-          </div>
+          <img
+            src="/logo-variants/logo-charge-pin-v4.svg"
+            alt="Gợi Ý Trạm Sạc"
+            className="h-11 w-11 rounded-xl object-cover shadow-[0_0_20px_rgba(0,177,79,0.28)] md:h-12 md:w-12"
+          />
           <div>
             <h1 className="text-xl md:text-2xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-gray-200 to-gray-400">
-              VF Range Assistant
+              Gợi Ý Trạm Sạc
             </h1>
             <p className="text-[10px] md:text-xs text-[#00B14F] font-semibold uppercase tracking-[0.2em] mt-0.5">
-              Smart Navigation System
+              Hệ thống đề xuất hành trình
             </p>
           </div>
         </div>

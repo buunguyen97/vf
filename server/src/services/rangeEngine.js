@@ -1,23 +1,8 @@
 /**
  * EV Range Estimation Engine
  *
- * Uses real-world data on how temperature, AC, speed, and traffic affect EV consumption.
+ * Uses real-world data on how temperature, AC, and speed affect EV consumption.
  */
-
-function getTrafficJamPenaltyPercent(trafficJamMinutes = 0) {
-  switch (trafficJamMinutes) {
-    case 15:
-      return 0.5;
-    case 30:
-      return 1;
-    case 45:
-      return 1.5;
-    case 60:
-      return 2;
-    default:
-      return 0;
-  }
-}
 
 function softenFactor(factor = 1) {
   return 1 + ((factor - 1) / 2);
@@ -31,7 +16,6 @@ function estimateRange({
   temperature,
   speed,
   acOn,
-  trafficJam,
 }) {
   let consumption = consumptionOverride || baseConsumption;
   let temperatureFactor = 1;
@@ -86,9 +70,6 @@ function estimateRange({
   consumption *= softenFactor(temperatureFactor);
   consumption *= softenFactor(speedFactor);
 
-  const trafficJamPenaltyPercent = getTrafficJamPenaltyPercent(trafficJam);
-  consumption *= 1 + trafficJamPenaltyPercent / 100;
-
   const availableEnergy = (batteryPercent / 100) * batteryCapacityKwh * 1000;
   const safeAvailableEnergy = availableEnergy * 0.9;
   const estimatedRangeKm = safeAvailableEnergy / consumption;
@@ -96,8 +77,7 @@ function estimateRange({
   return {
     estimatedRangeKm: Math.max(0, Math.round(estimatedRangeKm)),
     adjustedConsumptionWhKm: Math.round(consumption),
-    trafficJamPenaltyPercent,
   };
 }
 
-module.exports = { estimateRange, getTrafficJamPenaltyPercent };
+module.exports = { estimateRange };
