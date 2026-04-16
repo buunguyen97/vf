@@ -56,19 +56,18 @@ export default function PlannerControls({
       <div className="grid grid-cols-2 gap-2">
         <LocationSearch
           title="Điểm Đi"
-          placeholder="Tọa độ điểm đi..."
+          placeholder="Từ link Google Maps..."
           iconColor="#00B14F"
           onLocationSelect={onOriginSelect}
           defaultDisplay={userLocation ? `${userLocation[0].toFixed(5)}, ${userLocation[1].toFixed(5)}` : ''}
-          showLocateButton={true}
-          onLocateMe={onLocateMe}
+          showLocateButton={false}
           readOnly={true}
           compact={true}
         />
 
         <LocationSearch
           title="Điểm Đến"
-          placeholder="Tên địa danh..."
+          placeholder="Từ link Google Maps..."
           iconColor="#1464F4"
           onLocationSelect={onDestinationSelect}
           defaultDisplay={destination ? `${destination[0].toFixed(5)}, ${destination[1].toFixed(5)}` : ''}
