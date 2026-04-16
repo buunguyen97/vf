@@ -107,12 +107,23 @@ export const evApi = {
   },
 
   // Step 1: Fetch routes from OSRM (browser-side, no IP blocking)
-  // Step 2: Send routes to server for battery/station calculations
+  // Step 2: Send only essential data to server for battery/station calculations
   getOptimalRoute: async (params) => {
     const { origin, destination, waypoint, ...serverParams } = params;
 
     // Fetch routes from OSRM directly in browser
-    const routes = await fetchOSRMRoutes(origin, destination, waypoint);
+    const rawRoutes = await fetchOSRMRoutes(origin, destination, waypoint);
+
+    // Strip to only what server needs: distance + coordinates (reduced precision)
+    const routes = rawRoutes.map(r => ({
+      distance: r.distance,
+      geometry: {
+        coordinates: r.geometry.coordinates.map(c => [
+          Math.round(c[0] * 100000) / 100000,  // ~1m precision, saves bytes
+          Math.round(c[1] * 100000) / 100000,
+        ]),
+      },
+    }));
 
     // Send pre-fetched routes to server for station/battery analysis
     const response = await axios.post(`${API_URL}/optimal-route`, {
