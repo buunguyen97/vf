@@ -54,6 +54,7 @@ function App() {
   const [locationName, setLocationName] = useState('');
   const [showStartupLoader, setShowStartupLoader] = useState(true);
   const [isAmbientLoading, setIsAmbientLoading] = useState(true);
+  const [isSuggestingNearbyStations, setIsSuggestingNearbyStations] = useState(false);
   const [routeHistoryState, setRouteHistoryState] = useState({ entries: [], index: -1 });
   const isRestoringRouteRef = useRef(false);
 
@@ -253,13 +254,25 @@ function App() {
       if (destination) {
         calculateRouteAndStations();
       } else {
-        setSheetOpen(false);
+        setIsSuggestingNearbyStations(true);
       }
       return;
     }
 
     alert('Vui lòng bật định vị hoặc chọn điểm xuất phát để gợi ý trạm sạc gần bạn.');
   };
+
+  useEffect(() => {
+    if (!isSuggestingNearbyStations) return;
+
+    if (!isAmbientLoading) {
+      setSheetOpen(false);
+      const timer = setTimeout(() => setIsSuggestingNearbyStations(false), 650);
+      return () => clearTimeout(timer);
+    }
+
+    return undefined;
+  }, [isAmbientLoading, isSuggestingNearbyStations]);
 
   useEffect(() => {
     if (isRestoringRouteRef.current) {
@@ -348,6 +361,11 @@ function App() {
     setRouteHistoryState((prev) => ({ ...prev, index: nextIndex }));
   };
 
+  const isStationLoading = isRouting || isSuggestingNearbyStations || (!routeData && isAmbientLoading);
+  const stationLoadingLabel = isRouting
+    ? 'ĐANG GỢI Ý TRẠM SẠC'
+    : 'ĐANG TẢI TRẠM GẦN BẠN';
+
   const plannerContent = (
     <div className="space-y-3">
       {!showStartupLoader && !routeData && isAmbientLoading && (
@@ -390,7 +408,8 @@ function App() {
         onDestinationSelect={handleDestinationSelect}
         onParsedLink={handleParsedLink}
         onSuggestStations={handleSuggestStations}
-        isRouting={isRouting}
+        isLoadingStations={isStationLoading}
+        loadingLabel={stationLoadingLabel}
       />
     </div>
   );

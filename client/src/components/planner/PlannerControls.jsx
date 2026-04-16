@@ -24,7 +24,8 @@ export default function PlannerControls({
   onDestinationSelect,
   onParsedLink,
   onSuggestStations,
-  isRouting,
+  isLoadingStations,
+  loadingLabel,
 }) {
   return (
     <div className="relative z-10 space-y-2">
@@ -86,13 +87,13 @@ export default function PlannerControls({
         <div className="rounded-2xl border border-white/10 bg-[#050505]/98 p-2 shadow-[0_-12px_30px_rgba(0,0,0,0.35)]">
           <button
             onClick={onSuggestStations}
-            disabled={isRouting}
+            disabled={isLoadingStations}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#00B14F] to-[#008A3D] px-4 py-3.5 font-bold text-white shadow-[0_8px_20px_rgba(0,177,79,0.3)] transition-colors hover:from-[#00C259] hover:to-[#00B14F] disabled:cursor-wait disabled:opacity-85"
           >
-            {isRouting ? (
+            {isLoadingStations ? (
               <>
                 <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white/35 border-t-white"></span>
-                ĐANG GỢI Ý TRẠM SẠC
+                {loadingLabel}
               </>
             ) : (
               <>
