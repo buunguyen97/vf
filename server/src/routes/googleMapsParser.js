@@ -107,99 +107,92 @@ router.post('/parse-google-maps-link', async (req, res) => {
   console.log(`[Parser] Đang xử lý link: ${url}`);
 
   try {
-    const parsedInitUrl = new URL(url);
-    const validDomains = ['google.com', 'www.google.com', 'maps.google.com', 'maps.app.goo.gl', 'goo.gl'];
-    
-    if (!validDomains.includes(parsedInitUrl.hostname)) {
-      return res.json({ success: false, message: 'Đây không phải là link Google Maps hợp lệ.' });
-    }
-
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     
-    // Giả lập trình duyệt đầy đủ hơn để tránh bị Google chặn IP VPS
+    // Sử dụng User-Agent của iPhone để Google trả về phiên bản Mobile linh hoạt hơn
     const response = await fetch(url, {
       redirect: 'follow',
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'vi-vn',
         'Referer': 'https://www.google.com/'
       }
     });
     clearTimeout(timeoutId);
 
     const finalUrl = response.url;
-    console.log(`[Parser] URL cuối cùng sau redirect: ${finalUrl}`);
+    console.log(`[Parser] URL sau redirect: ${finalUrl}`);
 
-    // Thử tách từ URL trước
-    let extractedCoordinates = extractCoordinates(finalUrl);
+    // Ưu tiên 1: Tách từ URL
+    let extracted = extractCoordinates(finalUrl);
 
-    // Nếu URL không có, thì đọc nội dung HTML
-    const htmlText = await response.text();
-    
-    // Nếu vẫn chưa có tọa độ từ URL, tìm trong HTML
-    if (extractedCoordinates.error || !extractedCoordinates.origin || !extractedCoordinates.destination) {
-      console.log('[Parser] Không tìm thấy đủ tọa độ trong URL, đang quét nội dung HTML...');
+    // Ưu tiên 2: Nếu URL không đủ, quét nội dung HTML bằng các kỹ thuật mạnh hơn
+    const html = await response.text();
+
+    if (extracted.error || !extracted.origin || !extracted.destination) {
+      console.log('[Parser] Đang quét sâu nội dung HTML...');
+
+      // Kiểm tra xem có bị dính trang "Robot check" của Google không
+      if (html.includes('unusual traffic from your computer network') || html.includes('captcha')) {
+        console.error('[Parser] LỖI: Google đã chặn IP của VPS này (Robot Check).');
+        return res.json({
+          success: false,
+          message: 'Lỗi: Google Maps đang chặn máy chủ. Cách khắc phục: Hãy dán link "đầy đủ" từ trình duyệt thay vì dùng nút Chia sẻ trong App, hoặc dán tọa độ thủ công.'
+        });
+      }
+
+      // 1. Tìm trong các meta tags hoặc link preview
+      const metaMatches = [
+        ...html.matchAll(/property="og:url" content="([^"]+)"/g),
+        ...html.matchAll(/url=([^"'>\s]+)/gi)
+      ];
       
-      // Tìm meta refresh hoặc link ẩn trong script
-      const metaMatch = htmlText.match(/url=([^"'>\s]+)/i);
-      if (metaMatch) {
-        const metaUrl = decodeURIComponent(metaMatch[1].replace(/&amp;/g, '&'));
-        console.log(`[Parser] Tìm thấy meta-refresh URL: ${metaUrl}`);
-        const metaExtracted = extractCoordinates(metaUrl);
-        if (!metaExtracted.error) {
-          if (!extractedCoordinates.origin) extractedCoordinates.origin = metaExtracted.origin;
-          if (!extractedCoordinates.destination) extractedCoordinates.destination = metaExtracted.destination;
-          delete extractedCoordinates.error;
+      for (const m of metaMatches) {
+        const decoded = decodeURIComponent(m[1].replace(/&amp;/g, '&'));
+        const mExtracted = extractCoordinates(decoded);
+        if (!mExtracted.error) {
+          if (!extracted.origin) extracted.origin = mExtracted.origin;
+          if (!extracted.destination) extracted.destination = mExtracted.destination;
         }
       }
 
-      // Regex quét tất cả các cặp [lat, lng] hoặc [lng, lat] phổ biến trong script của Google Maps
-      // Google thường lưu dạng: [106.12345, 10.6789] (lng trước lat sau)
-      const geoMatches = [...htmlText.matchAll(/\[(-?\d+\.\d+),(-?\d+\.\d+)\]/g)]
+      // 2. Tìm bất kỳ chuỗi số nào giống tọa độ Việt Nam trong toàn bộ HTML
+      // Tìm dạng: 10.123456,106.123456 hoặc 10.123456, 106.123456
+      const rawMatches = [...html.matchAll(/(-?\d{1,2}\.\d{5,})\s*,\s*(-?\d{1,3}\.\d{5,})/g)]
         .map(m => [parseFloat(m[1]), parseFloat(m[2])])
-        // Lọc các số giống tọa độ Việt Nam (Lat: 8-24, Lng: 102-110)
-        .filter(c => (c[0] > 100 && c[0] < 110 && c[1] > 8 && c[1] < 24) || (c[1] > 100 && c[1] < 110 && c[0] > 8 && c[0] < 24));
+        // Lọc tọa độ hợp lệ tại Việt Nam (Lat: 8-24, Lng: 102-110)
+        .filter(c => {
+          const isVn1 = (c[0] >= 8 && c[0] <= 24) && (c[1] >= 102 && c[1] <= 110);
+          const isVn2 = (c[1] >= 8 && c[1] <= 24) && (c[0] >= 102 && c[0] <= 110);
+          return isVn1 || isVn2;
+        })
+        .map(c => (c[0] < c[1] ? c : [c[1], c[0]])); // Chuẩn hóa [lat, lng]
 
-      if (geoMatches.length > 0) {
-        console.log(`[Parser] Tìm thấy ${geoMatches.length} cặp số giống tọa độ trong HTML.`);
-        
-        // Chuẩn hóa: Lat luôn là số nhỏ (8-24), Lng luôn là số lớn (102-110)
-        const normalized = geoMatches.map(c => {
-          if (c[0] > c[1]) return [c[1], c[0]]; // [lat, lng]
-          return c;
-        });
-
-        if (!extractedCoordinates.origin && normalized.length >= 2) {
-          extractedCoordinates.origin = normalized[0];
-          delete extractedCoordinates.error;
-        }
-        if (!extractedCoordinates.destination && normalized.length >= 1) {
-          // Lấy cặp cuối cùng thường là điểm đến
-          extractedCoordinates.destination = normalized[normalized.length - 1];
-          delete extractedCoordinates.error;
-        }
+      if (rawMatches.length > 0) {
+        console.log(`[Parser] Quét HTML thấy ${rawMatches.length} tọa độ phù hợp.`);
+        // Thông thường cặp đầu tiên là điểm đi hoặc điểm đến
+        if (!extracted.origin) extracted.origin = rawMatches[0];
+        if (!extracted.destination) extracted.destination = rawMatches[rawMatches.length - 1];
+        delete extracted.error;
       }
     }
 
-    if (extractedCoordinates.error || !extractedCoordinates.destination) {
-      console.error('[Parser] Thất bại - Không trích xuất được tọa độ.');
+    if (!extracted.destination) {
       return res.json({
         success: false,
-        message: 'Google Maps đang chặn truy cập từ Server hoặc link không chứa tọa độ trực tiếp. Hãy thử dùng link đầy đủ (không rút gọn) hoặc dán tọa độ thủ công.',
+        message: 'Không tìm thấy thông tin tọa độ. Vui lòng thử dùng Link đầy đủ từ trình duyệt.',
         resolvedUrl: finalUrl
       });
     }
 
-    console.log('[Parser] Thành công:', extractedCoordinates);
+    console.log('[Parser] Kết quả cuối cùng:', extracted);
     return res.json({
       success: true,
-      origin: extractedCoordinates.origin,
-      destination: extractedCoordinates.destination,
+      origin: extracted.origin,
+      destination: extracted.destination,
       resolvedUrl: finalUrl
     });
 
@@ -207,7 +200,7 @@ router.post('/parse-google-maps-link', async (req, res) => {
     console.error('[Parser] Lỗi nghiêm trọng:', err);
     return res.json({
       success: false,
-      message: 'Có lỗi xảy ra khi xử lý link. Vui lòng thử lại.',
+      message: 'Lỗi kết nối đến Google Maps.',
       error: err.message
     });
   }
