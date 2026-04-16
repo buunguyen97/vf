@@ -1,0 +1,5 @@
+SSH_HOST = "103.216.117.31"
+SSH_PORT = 24700
+SSH_USER = "root"
+SSH_PASS = "ywhUk7I>c+=__nAFso5="
+

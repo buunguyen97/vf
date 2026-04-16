@@ -29,17 +29,31 @@ router.post('/optimal-route', async (req, res) => {
     // 1. Fetch Main Route
     const waypointStr = waypoint ? `;${parseFloat(waypoint[1])},${parseFloat(waypoint[0])}` : '';
     const osrmUrl = `http://router.project-osrm.org/route/v1/driving/${origin[1]},${origin[0]}${waypointStr};${destination[1]},${destination[0]}?overview=full&geometries=geojson&continue_straight=true`;
-    const routeRes = await fetch(osrmUrl);
+    
+    let routeRes;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      routeRes = await fetch(osrmUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+    } catch (fetchErr) {
+      console.error('[RoutePlanning] OSRM Fetch Error:', fetchErr.message);
+      return res.status(503).json({ error: 'Lỗi máy chủ bản đồ (bị chặn IP hoặc quá tải). Xin thử lại.' });
+    }
     
     if (routeRes.ok) {
         const routeData = await routeRes.json();
         if (routeData.code === 'Ok' && routeData.routes.length > 0) {
             routesArray.push(routeData.routes[0]);
+        } else {
+            console.error('[RoutePlanning] OSRM returned non-Ok code:', routeData.code);
         }
+    } else {
+        console.error('[RoutePlanning] OSRM returned HTTP status:', routeRes.status);
     }
 
     if (routesArray.length === 0) {
-        return res.status(404).json({ error: 'No route found' });
+        return res.status(404).json({ error: 'Không tìm thấy đường đi giữa hai điểm này.' });
     }
 
     // TẠO TUYẾN ĐƯỜNG PHỤ NẾU CHƯA CÓ WAYPOINT
@@ -309,8 +323,8 @@ router.post('/optimal-route', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error in /optimal-route:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Error in /optimal-route:', error.stack || error.message || error);
+    res.status(500).json({ error: 'Internal server error - Route Calculation Failed', details: error.message });
   }
 });
 
