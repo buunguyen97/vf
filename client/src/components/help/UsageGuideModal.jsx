@@ -31,7 +31,7 @@ export default function UsageGuideModal({ open, onClose }) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[2600] flex items-start justify-center overflow-y-auto bg-black/70 px-3 pb-[max(env(safe-area-inset-bottom),12px)] pt-[calc(env(safe-area-inset-top)+52px)] backdrop-blur-sm md:items-center md:px-3 md:py-4">
+    <div className="fixed inset-0 z-[2600] flex items-start justify-center overflow-y-auto bg-black/70 px-3 pb-[max(env(safe-area-inset-bottom),12px)] pt-[calc(env(safe-area-inset-top)+72px)] backdrop-blur-sm md:items-center md:px-3 md:py-4">
       <div
         className="absolute inset-0"
         onClick={onClose}
