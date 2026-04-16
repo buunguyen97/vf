@@ -1,0 +1,62 @@
+name: Deploy VinFast VPS
+
+# Flow này kích hoạt mỗi khi bạn đẩy code (push) nhánh GoiyTramSac lên Github
+on:
+  push:
+    branches:
+      - GoiyTramSac
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: ⬇️ 1. Tải code từ GitHub
+        uses: actions/checkout@v3
+
+      - name: ⚡ 2. Cài đặt Node.js 18
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: 🛠️ 3. Build phần giao diện (Frontend)
+        working-directory: ./client
+        run: |
+          npm install
+          npm run build
+
+      - name: 📦 4. Đóng gói Code (Tạo file Zip)
+        # Nén thư mục server/ (trừ rác) và client/dist/ vào 1 cục cho nhẹ và tải nhanh
+        run: |
+          zip -r deploy_package.zip client/dist/ server/ -x "server/node_modules/*"
+
+      - name: 🚀 5. Chuyển File sang Server (VPS)
+        uses: appleboy/scp-action@master
+        with:
+          host: 103.216.117.31          # Chỉnh đúng IP public 
+          port: 24700                   # Cổng đặc biệt của VPS
+          username: root                # Tên user
+          password: ${{ secrets.SERVER_PASSWORD }}  # (QUAN TRỌNG) Lấy mật khẩu từ bảo mật GitHub
+          source: "deploy_package.zip"
+          target: "/var/www/vinfast"    # Ném và thả vào trong server VPS
+
+      - name: 🔄 6. Giải nén và Khởi Động Web
+        uses: appleboy/ssh-action@master
+        with:
+          host: 103.216.117.31
+          port: 24700
+          username: root
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            cd /var/www/vinfast
+            unzip -o deploy_package.zip
+            rm deploy_package.zip
+            
+            # Kích hoạt môi trường biên dịch của máy Cũ Center Os
+            export NVM_DIR=/root/.nvm && source /root/.nvm/nvm.sh
+            source /opt/rh/devtoolset-11/enable
+            
+            # Cài thư viện phần Api mới nhất và Start server
+            cd server
+            npm install --production
+            pm2 restart vinfast-api
