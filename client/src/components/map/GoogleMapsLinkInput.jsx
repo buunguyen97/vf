@@ -54,6 +54,22 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
     }
   };
 
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text?.trim()) {
+        setError('Clipboard đang trống.');
+        return;
+      }
+
+      setUrlState(text.trim());
+      setError('');
+      setMessage('');
+    } catch (err) {
+      setError('Không thể dán tự động trên thiết bị này. Hãy dán thủ công vào ô link.');
+    }
+  };
+
   return (
     <div className="bg-[#111111] border border-white/10 rounded-xl p-3 mb-2 flex flex-col gap-2 relative">
       <div className="flex items-center gap-2">
@@ -75,6 +91,13 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
           className="flex-1 bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#1464F4]"
           onKeyDown={(e) => e.key === 'Enter' && handleParse()}
         />
+        <button
+          type="button"
+          onClick={handlePaste}
+          className="bg-white/8 hover:bg-white/12 text-white px-3 py-2 rounded-lg text-sm font-bold flex items-center justify-center transition-colors shrink-0 border border-white/10"
+        >
+          Dán
+        </button>
         <button 
           onClick={handleParse}
           disabled={loading}

@@ -318,17 +318,17 @@ function StationPopupBody({
       onTouchEnd={handleDragEnd}
       onTouchCancel={handleDragEnd}
     >
-      <div className="rounded-[18px] border border-slate-100 bg-white px-2.5 py-2">
+      <div className="rounded-[18px] border border-slate-100 bg-white px-2.25 py-1.25">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">Địa chỉ trạm</p>
-            <p className="mt-0.5 text-[12.5px] font-semibold leading-[1.45] text-slate-700">
+            <p className="mt-0.25 text-[11.5px] font-semibold leading-[1.32] text-slate-700">
               {getCleanStationAddress(station)}
             </p>
           </div>
 
           {station.batteryAtStation !== undefined && (
-            <div className="shrink-0 rounded-full bg-[#eff6ff] px-2 py-0.5 text-[9px] font-bold text-[#1d4ed8]">
+            <div className="shrink-0 rounded-full bg-[#eff6ff] px-1.75 py-0.5 text-[8.5px] font-bold text-[#1d4ed8]">
               Pin {station.batteryAtStation}%
             </div>
           )}
@@ -336,17 +336,17 @@ function StationPopupBody({
       </div>
 
       {chargingSpecs.length > 0 && (
-        <div className={`mt-1.5 grid gap-1.5 ${chargingSpecs.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+        <div className={`mt-1 grid gap-1 ${chargingSpecs.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {chargingSpecs.map((spec, index) => (
             <div
               key={`${spec.power}-${spec.count}-${index}`}
-              className="flex items-center justify-between gap-2 rounded-[14px] border border-[#22c55e]/16 bg-[linear-gradient(180deg,#f7fff9_0%,#eefbf3_100%)] px-2.5 py-1.25 shadow-[0_4px_12px_rgba(34,197,94,0.07)]"
+              className="flex items-center justify-between gap-1.5 rounded-[14px] border border-[#22c55e]/16 bg-[linear-gradient(180deg,#f7fff9_0%,#eefbf3_100%)] px-2 py-0.75 shadow-[0_4px_12px_rgba(34,197,94,0.07)]"
             >
-              <p className="text-[14px] font-black leading-none text-[#166534]">
+              <p className="text-[13px] font-black leading-none text-[#166534]">
                 {spec.power}
-                <span className="ml-1 text-[9px] font-bold text-[#15803d]/80">kW</span>
+                <span className="ml-0.75 text-[8.5px] font-bold text-[#15803d]/80">kW</span>
               </p>
-              <div className="rounded-full border border-[#22c55e]/18 bg-white/90 px-1.75 py-0.5 text-[8.5px] font-bold leading-none text-[#15803d]">
+              <div className="rounded-full border border-[#22c55e]/18 bg-white/90 px-1.5 py-0.5 text-[8px] font-bold leading-none text-[#15803d]">
                 {spec.count} cổng
               </div>
             </div>
@@ -355,21 +355,21 @@ function StationPopupBody({
       )}
 
       {distanceToStationKm !== null && distanceToDestinationKm !== null && (
-        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-          <div className="rounded-[14px] border border-[#dbeafe] bg-[#eff6ff] px-2 py-1.25 text-center">
+        <div className="mt-1 grid grid-cols-2 gap-1">
+          <div className="rounded-[14px] border border-[#dbeafe] bg-[#eff6ff] px-1.75 py-0.9 text-center">
             <p className="text-[9px] uppercase tracking-wide text-[#1464F4]/70">Đến trạm</p>
-            <p className="mt-0.75 text-[12.5px] font-black leading-none text-[#1464F4]">{distanceToStationKm} km</p>
+            <p className="mt-0.4 text-[11.5px] font-black leading-none text-[#1464F4]">{distanceToStationKm} km</p>
           </div>
-          <div className="rounded-[14px] border border-[#cffafe] bg-[#ecfeff] px-2 py-1.25 text-center">
+          <div className="rounded-[14px] border border-[#cffafe] bg-[#ecfeff] px-1.75 py-0.9 text-center">
             <p className="text-[9px] uppercase tracking-wide text-sky-600/70">Từ trạm đến đích</p>
-            <p className="mt-0.75 text-[12.5px] font-black leading-none text-sky-700">{distanceToDestinationKm} km</p>
+            <p className="mt-0.4 text-[11.5px] font-black leading-none text-sky-700">{distanceToDestinationKm} km</p>
           </div>
         </div>
       )}
 
       {stationReachability && (
         <div
-          className={`mt-1.5 rounded-[16px] border px-2.5 py-1.75 ${
+          className={`mt-1 rounded-[16px] border px-2 py-1.25 ${
             stationReachability.canReach
               ? 'border-[#00B14F]/20 bg-[#00B14F]/10'
               : 'border-[#DA303E]/20 bg-[#DA303E]/10'
@@ -382,10 +382,10 @@ function StationPopupBody({
               <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-[#DA303E]" />
             )}
             <div>
-              <p className={`text-[12.5px] font-bold ${stationReachability.canReach ? 'text-[#007032]' : 'text-[#A0222C]'}`}>
+              <p className={`text-[11.5px] font-bold ${stationReachability.canReach ? 'text-[#007032]' : 'text-[#A0222C]'}`}>
                 {stationReachability.canReach ? 'Có thể đến nơi an toàn' : 'Không thể đến nơi'}
               </p>
-              <p className="mt-0.75 text-[10.5px] leading-[1.45] text-gray-700">
+              <p className="mt-0.35 text-[9.75px] leading-[1.32] text-gray-700">
                 {getReachabilitySummary(stationReachability)}
               </p>
             </div>
@@ -393,11 +393,11 @@ function StationPopupBody({
         </div>
       )}
 
-      <div className="mt-1.5 overflow-hidden rounded-[14px] border border-gray-100">
+      <div className="mt-1 overflow-hidden rounded-[14px] border border-gray-100">
         <button
           type="button"
           onClick={() => setExpandedAmenityStationId((current) => (current === station.id ? null : station.id))}
-          className="flex w-full items-center justify-between bg-gray-50 px-2.5 py-1.5 transition-colors hover:bg-gray-100"
+          className="flex w-full items-center justify-between bg-gray-50 px-2.25 py-1 transition-colors hover:bg-gray-100"
         >
           <span className="flex items-center gap-2 text-[11px] font-semibold text-gray-600">
             <Coffee className="h-2.5 w-2.5 text-[#16a34a]" />
@@ -419,12 +419,12 @@ function StationPopupBody({
         )}
       </div>
 
-      <div className="mt-1.5">
+      <div className="mt-1">
         <a
           href={`https://www.google.com/maps/dir/?api=1&destination=${station.latitude},${station.longitude}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex w-full items-center justify-center gap-2 rounded-[14px] bg-[#1464F4] px-4 py-1.75 text-[10.5px] font-semibold transition-colors hover:bg-[#0D4BC4]"
+          className="flex w-full items-center justify-center gap-2 rounded-[14px] bg-[#1464F4] px-4 py-1.25 text-[10.25px] font-semibold transition-colors hover:bg-[#0D4BC4]"
           style={{ color: '#ffffff', textDecoration: 'none' }}
         >
           <Navigation className="h-3 w-3" strokeWidth={2.5} /> Bắt đầu đi với Google Map
