@@ -156,6 +156,15 @@ async function runAllTests() {
   const r14 = await post('/estimate-range', { vehicleId: vf3.id, temperature: 25, speed: 60, acOn: true });
   check('TC-R14', 'Missing batteryPercent → 400', r14.status, 400);
 
+  // TC-R15: Traffic Jam 15 mins → -0.5% battery
+  const r15a = await post('/estimate-range', { batteryPercent: 80, vehicleId: vf3.id, temperature: 25, speed: 60, acOn: false, trafficJam: 0 });
+  const r15b = await post('/estimate-range', { batteryPercent: 80, vehicleId: vf3.id, temperature: 25, speed: 60, acOn: false, trafficJam: 15 });
+  assert('TC-R15', 'Traffic jam reduces range', r15b.data.estimatedRangeKm < r15a.data.estimatedRangeKm);
+  
+  // TC-R16: Traffic Jam 60 mins → -2% battery
+  const r16 = await post('/estimate-range', { batteryPercent: 80, vehicleId: vf3.id, temperature: 25, speed: 60, acOn: false, trafficJam: 60 });
+  assert('TC-R16', '60m traffic reduces range more than 15m', r16.data.estimatedRangeKm < r15b.data.estimatedRangeKm);
+
   // Multi-vehicle cross check
   console.log('\n  --- Multi-Vehicle Cross Check ---');
   for (const v of vehiclesRes.data) {
