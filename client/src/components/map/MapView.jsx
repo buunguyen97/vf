@@ -194,6 +194,33 @@ function MapFitter({ routeCoords }) {
   return null;
 }
 
+function PreviewRouteFitter({ routeCoords, active }) {
+  const map = useMap();
+  const lastRouteKeyRef = useRef('');
+
+  useEffect(() => {
+    if (!active || !routeCoords || routeCoords.length < 2) return;
+
+    const first = routeCoords[0];
+    const last = routeCoords[routeCoords.length - 1];
+    const routeKey = `${routeCoords.length}:${first?.[0]}:${first?.[1]}:${last?.[0]}:${last?.[1]}`;
+    if (lastRouteKeyRef.current === routeKey) return;
+    lastRouteKeyRef.current = routeKey;
+
+    const bounds = L.latLngBounds(routeCoords);
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    const bottomPadding = isMobile ? 260 : 80;
+    map.fitBounds(bounds, {
+      paddingTopLeft: [50, 60],
+      paddingBottomRight: [50, bottomPadding],
+      animate: true,
+      duration: 1.1,
+    });
+  }, [active, routeCoords, map]);
+
+  return null;
+}
+
 function MapClickHandler({ setDestination, routeData, setWaypoint, interactionLocked }) {
   useMapEvents({
     dblclick(e) {
@@ -219,6 +246,7 @@ function StationPopupBody({
   chargingSpecs,
   distanceToStationKm,
   distanceToDestinationKm,
+  isRoutePlannerStation,
   expandedAmenityStationId,
   setExpandedAmenityStationId,
 }) {
@@ -364,6 +392,13 @@ function StationPopupBody({
             <p className="text-[9px] uppercase tracking-wide text-sky-600/70">Từ trạm đến đích</p>
             <p className="mt-0.4 text-[11.5px] font-black leading-none text-sky-700">{distanceToDestinationKm} km</p>
           </div>
+        </div>
+      )}
+
+      {!isRoutePlannerStation && distanceToStationKm !== null && (
+        <div className="mt-1 rounded-[14px] border border-[#dbeafe] bg-[#eff6ff] px-2 py-1.1 text-center">
+          <p className="text-[9px] uppercase tracking-wide text-[#1464F4]/70">Quãng đường đến trạm</p>
+          <p className="mt-0.4 text-[12px] font-black leading-none text-[#1464F4]">{distanceToStationKm} km</p>
         </div>
       )}
 
@@ -541,6 +576,14 @@ export default function MapView({
     };
   }, [routeData, selectedStation]);
 
+  const selectedAmbientRouteCoords = useMemo(() => {
+    if (routeData) return null;
+    if (!selectedStation || !Array.isArray(reachability?.polylineCoords) || reachability.polylineCoords.length < 2) {
+      return null;
+    }
+    return reachability.polylineCoords;
+  }, [routeData, selectedStation, reachability]);
+
   const handleAlternativeRouteSelect = (routeIndex, event) => {
     L.DomEvent.stopPropagation(event);
     if (selectedStation) return;
@@ -683,6 +726,16 @@ export default function MapView({
           </>
         )}
 
+        {!routeData && selectedAmbientRouteCoords && (
+          <>
+            <Polyline
+              positions={selectedAmbientRouteCoords}
+              pathOptions={{ color: '#1464F4', weight: 6, opacity: 0.88, lineCap: 'round', lineJoin: 'round' }}
+            />
+            <PreviewRouteFitter routeCoords={selectedAmbientRouteCoords} active={!!selectedStation} />
+          </>
+        )}
+
         {displayStations.map((station) => {
           const isOptimal = optimalStationIds.has(station.id);
           const isSelectedStation = selectedStation?.id === station.id;
@@ -691,10 +744,13 @@ export default function MapView({
           const chargingSpecs = getChargingSpecCards(station);
           const distanceToStationKm = station.distanceFromStartKm !== undefined
             ? Math.max(0, Math.round(station.distanceFromStartKm * 10) / 10)
-            : null;
+            : (stationReachability?.distanceKm !== undefined
+              ? Math.max(0, Math.round(stationReachability.distanceKm * 10) / 10)
+              : null);
           const distanceToDestinationKm = distanceToStationKm !== null && routeData?.totalDistanceKm !== undefined
             ? Math.max(0, Math.round((routeData.totalDistanceKm - distanceToStationKm) * 10) / 10)
             : null;
+          const isRoutePlannerStation = Boolean(routeData);
 
           return (
             <Marker
@@ -724,6 +780,7 @@ export default function MapView({
                   chargingSpecs={chargingSpecs}
                   distanceToStationKm={distanceToStationKm}
                   distanceToDestinationKm={distanceToDestinationKm}
+                  isRoutePlannerStation={isRoutePlannerStation}
                   expandedAmenityStationId={expandedAmenityStationId}
                   setExpandedAmenityStationId={setExpandedAmenityStationId}
                 />

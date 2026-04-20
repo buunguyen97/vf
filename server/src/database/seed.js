@@ -102,10 +102,15 @@ function seed() {
   const db = getDb();
 
   console.log('Seeding vehicles...');
-  db.prepare('DELETE FROM vehicles').run();
   const insertVehicle = db.prepare(`
     INSERT INTO vehicles (name, display_name, battery_capacity_kwh, base_consumption_wh_km, wltp_range_km, image_url)
     VALUES (@name, @display_name, @battery_capacity_kwh, @base_consumption_wh_km, @wltp_range_km, @image_url)
+    ON CONFLICT(name) DO UPDATE SET
+      display_name = excluded.display_name,
+      battery_capacity_kwh = excluded.battery_capacity_kwh,
+      base_consumption_wh_km = excluded.base_consumption_wh_km,
+      wltp_range_km = excluded.wltp_range_km,
+      image_url = excluded.image_url
   `);
 
   const insertVehicleTransaction = db.transaction((items) => {
@@ -115,8 +120,11 @@ function seed() {
 
   console.log('Seeding charging stations...');
   const insertStation = db.prepare(`
-    INSERT OR IGNORE INTO charging_stations (name, address, latitude, longitude, power_kw, city)
+    INSERT INTO charging_stations (name, address, latitude, longitude, power_kw, city)
     VALUES (@name, @address, @latitude, @longitude, @power_kw, @city)
+    ON CONFLICT(name, latitude, longitude, power_kw) DO UPDATE SET
+      address = excluded.address,
+      city = excluded.city
   `);
 
   const insertStationTransaction = db.transaction((items) => {

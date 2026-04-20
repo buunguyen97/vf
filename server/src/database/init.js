@@ -10,6 +10,7 @@ function getDb() {
     db = new Database(DB_PATH);
     db.pragma('journal_mode = WAL');
     initTables();
+    normalizeTables();
   }
   return db;
 }
@@ -37,6 +38,20 @@ function initTables() {
       status TEXT DEFAULT 'available',
       city TEXT
     );
+  `);
+}
+
+function normalizeTables() {
+  db.exec(`
+    DELETE FROM charging_stations
+    WHERE id NOT IN (
+      SELECT MIN(id)
+      FROM charging_stations
+      GROUP BY name, latitude, longitude, power_kw
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_charging_stations_unique
+    ON charging_stations (name, latitude, longitude, power_kw);
   `);
 }
 

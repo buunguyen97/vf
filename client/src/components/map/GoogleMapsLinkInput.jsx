@@ -3,6 +3,50 @@ import { CircleHelp } from 'lucide-react';
 import { evApi } from '../../services/api';
 import UsageGuideModal from '../help/UsageGuideModal';
 
+function normalizeGoogleMapsInput(rawValue) {
+  const raw = `${rawValue || ''}`.trim();
+  if (!raw) return '';
+
+  const matchedUrl = raw.match(/https?:\/\/[^\s]+|(?:maps\.app\.goo\.gl|goo\.gl|g\.co|google\.[^\s/]+)[^\s]*/i);
+  let normalized = (matchedUrl ? matchedUrl[0] : raw).trim();
+
+  normalized = normalized.replace(/[)\]>]+$/g, '');
+
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) {
+    normalized = `https://${normalized}`;
+  }
+
+  return normalized;
+}
+
+function getApiErrorMessage(error) {
+  return (
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.message ||
+    'Lỗi kết nối tới máy chủ khi phân tích link.'
+  );
+}
+
+function isSupportedGoogleMapsUrl(urlString) {
+  try {
+    const parsed = new URL(urlString);
+    const hostname = parsed.hostname.toLowerCase();
+
+    return (
+      hostname === 'maps.app.goo.gl' ||
+      hostname.endsWith('.maps.app.goo.gl') ||
+      hostname === 'goo.gl' ||
+      hostname.endsWith('.goo.gl') ||
+      hostname === 'g.co' ||
+      hostname.endsWith('.g.co') ||
+      hostname.includes('google.')
+    );
+  } catch {
+    return false;
+  }
+}
+
 export default function GoogleMapsLinkInput({ onOriginDestFound }) {
   const [urlState, setUrlState] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,18 +57,20 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
   const [manualPasteValue, setManualPasteValue] = useState('');
 
   const handleParse = async () => {
-    if (!urlState.trim()) {
+    const normalizedUrl = normalizeGoogleMapsInput(urlState);
+
+    if (!normalizedUrl) {
       setError('Vui lòng dán link Google Maps vào ô trống.');
       return;
     }
 
+    if (!isSupportedGoogleMapsUrl(normalizedUrl)) {
+      setError('Link không đúng định dạng của Google Maps.');
+      return;
+    }
+
     try {
-      // Basic check
-      const parsed = new URL(urlState);
-      if (!parsed.hostname.includes('google') && !parsed.hostname.includes('goo.gl')) {
-        setError('Link không đúng định dạng của Google Maps.');
-        return;
-      }
+      new URL(normalizedUrl);
     } catch {
       setError('Link không hợp lệ.');
       return;
@@ -33,18 +79,26 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
     setError('');
     setMessage('');
     setLoading(true);
+    setUrlState(normalizedUrl);
 
     try {
-      const result = await evApi.parseGoogleMapsLink(urlState);
+      const result = await evApi.parseGoogleMapsLink(normalizedUrl);
       
       if (!result.success) {
         setError(result.message || 'Không thể tách tọa độ từ link này.');
       } else {
+        const resolvedDestination = result.destination || result.origin || null;
+
+        if (!resolvedDestination) {
+          setError('Không thể xác định điểm đến từ link này.');
+          return;
+        }
+
         setMessage('Đã lấy tọa độ thành công!');
         // Call the parent handler
         onOriginDestFound({
-          origin: result.origin, 
-          destination: result.destination
+          origin: result.destination ? result.origin : null,
+          destination: resolvedDestination,
         });
         // Clear input upon success after a short delay
         setTimeout(() => {
@@ -53,7 +107,7 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
         }, 3000);
       }
     } catch (err) {
-      setError('Lỗi kết nối tới máy chủ khi phân tích link.');
+      setError(getApiErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -71,7 +125,7 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
         return;
       }
 
-      setUrlState(text.trim());
+      setUrlState(normalizeGoogleMapsInput(text));
       setError('');
       setMessage('');
     } catch (err) {
@@ -83,7 +137,7 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
   };
 
   const handleManualPasteConfirm = () => {
-    const trimmed = manualPasteValue.trim();
+    const trimmed = normalizeGoogleMapsInput(manualPasteValue);
 
     if (!trimmed) {
       setError('Vui lòng dán link Google Maps vào ô hỗ trợ.');

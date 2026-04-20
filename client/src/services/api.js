@@ -2,6 +2,16 @@ import axios from 'axios';
 
 const API_URL = '/api';
 
+const normalizeCoordinatePair = (coords) => {
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+
+  const lat = Number(coords[0]);
+  const lng = Number(coords[1]);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return [lat, lng];
+};
+
 export const evApi = {
   getVehicles: async () => {
     const response = await axios.get(`${API_URL}/vehicles`);
@@ -26,7 +36,27 @@ export const evApi = {
   },
 
   getOptimalRoute: async (params) => {
-    const response = await axios.post(`${API_URL}/optimal-route`, params);
+    const payload = {
+      ...params,
+      origin: normalizeCoordinatePair(params?.origin),
+      destination: normalizeCoordinatePair(params?.destination),
+      waypoint: params?.waypoint ? normalizeCoordinatePair(params.waypoint) : null,
+      currentBattery: params?.currentBattery !== undefined && params?.currentBattery !== null
+        ? Number(params.currentBattery)
+        : params?.currentBattery,
+      targetBattery: params?.targetBattery !== undefined && params?.targetBattery !== null
+        ? Number(params.targetBattery)
+        : params?.targetBattery,
+      vehicleId: params?.vehicleId !== undefined && params?.vehicleId !== null
+        ? Number(params.vehicleId)
+        : params?.vehicleId,
+      vehicleName: params?.vehicleName || null,
+      routeIndex: params?.routeIndex !== undefined && params?.routeIndex !== null
+        ? Number(params.routeIndex)
+        : 0,
+    };
+
+    const response = await axios.post(`${API_URL}/optimal-route`, payload);
     return response.data;
   },
 

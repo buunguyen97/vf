@@ -1,13 +1,150 @@
 const express = require('express');
 const router = express.Router();
 
+function normalizeInputUrl(rawValue) {
+  const raw = `${rawValue || ''}`.trim();
+  if (!raw) return '';
+
+  const matchedUrl = raw.match(/https?:\/\/[^\s]+|(?:maps\.app\.goo\.gl|goo\.gl|g\.co|google\.[^\s/]+)[^\s]*/i);
+  let normalized = (matchedUrl ? matchedUrl[0] : raw).trim();
+
+  normalized = normalized.replace(/[)\]>]+$/g, '');
+
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) {
+    normalized = `https://${normalized}`;
+  }
+
+  return normalized;
+}
+
+function isGoogleMapsUrl(urlStr) {
+  try {
+    const parsed = new URL(urlStr);
+    const hostname = parsed.hostname.toLowerCase();
+
+    return (
+      hostname === 'maps.app.goo.gl' ||
+      hostname.endsWith('.maps.app.goo.gl') ||
+      hostname === 'goo.gl' ||
+      hostname.endsWith('.goo.gl') ||
+      hostname === 'g.co' ||
+      hostname.endsWith('.g.co') ||
+      hostname.includes('google.')
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isPlaceOnlyGoogleMapsUrl(urlStr) {
+  try {
+    const parsed = new URL(urlStr);
+    const path = parsed.pathname.toLowerCase();
+    return path.includes('/maps/place/') || (path.includes('/place/') && !path.includes('/dir/'));
+  } catch {
+    return false;
+  }
+}
+
+function isRouteGoogleMapsUrl(urlStr) {
+  try {
+    const parsed = new URL(urlStr);
+    const path = parsed.pathname.toLowerCase();
+    return (
+      path.includes('/maps/dir/') ||
+      path.includes('/dir/') ||
+      parsed.searchParams.has('origin') ||
+      parsed.searchParams.has('destination') ||
+      parsed.searchParams.has('saddr') ||
+      parsed.searchParams.has('daddr')
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isMapsQueryPlaceUrl(urlStr) {
+  try {
+    const parsed = new URL(urlStr);
+    const path = parsed.pathname.toLowerCase();
+    const q = parsed.searchParams.get('q');
+
+    if (!q) return false;
+
+    return (
+      path === '/maps' &&
+      parsed.searchParams.has('ftid') &&
+      !isRouteGoogleMapsUrl(urlStr)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function normalizeCoordinateResult(result) {
+  if (!result || result.error) return result;
+
+  const normalized = {
+    origin: result.origin || null,
+    destination: result.destination || null,
+  };
+
+  if (normalized.origin && !normalized.destination) {
+    normalized.destination = normalized.origin;
+    normalized.origin = null;
+  }
+
+  return normalized;
+}
+
+function extractPreferredPlaceDestination(urlStr) {
+  if (!urlStr) return null;
+
+  const exactMatches = [...urlStr.matchAll(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/g)];
+  if (exactMatches.length > 0) {
+    const last = exactMatches[exactMatches.length - 1];
+    return [parseFloat(last[1]), parseFloat(last[2])];
+  }
+
+  const fallbackMatches = [...urlStr.matchAll(/!1d(-?\d+\.\d+)!2d(-?\d+\.\d+)/g)];
+  if (fallbackMatches.length > 0) {
+    const last = fallbackMatches[fallbackMatches.length - 1];
+    return [parseFloat(last[2]), parseFloat(last[1])];
+  }
+
+  return null;
+}
+
+async function geocodeGoogleMapsQuery(urlStr) {
+  try {
+    const parsed = new URL(urlStr);
+    const q = `${parsed.searchParams.get('q') || ''}`.trim();
+    if (!q) return null;
+
+    const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&countrycodes=vn&limit=1&accept-language=vi`;
+    const response = await fetch(geocodeUrl, {
+      headers: { 'User-Agent': 'VFRangeAssistant/1.0' }
+    });
+
+    if (!response.ok) return null;
+
+    const results = await response.json();
+    const bestMatch = Array.isArray(results) ? results[0] : null;
+    if (!bestMatch?.lat || !bestMatch?.lon) return null;
+
+    return [parseFloat(bestMatch.lat), parseFloat(bestMatch.lon)];
+  } catch {
+    return null;
+  }
+}
+
 function extractCoordinates(urlStr) {
   let origin = null;
   let destination = null;
 
   try {
     const parsedUrl = new URL(urlStr);
-    const lowercaseUrl = urlStr.toLowerCase();
+    const isPlaceOnlyUrl = isPlaceOnlyGoogleMapsUrl(urlStr);
     
     // Parse /dir/ paths more robustly
     const pathParts = parsedUrl.pathname.split('/').filter(Boolean);
@@ -61,13 +198,15 @@ function extractCoordinates(urlStr) {
         const d34Matches = [...urlStr.matchAll(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/g)];
         d34Matches.forEach(m => extractedCoords.push([parseFloat(m[1]), parseFloat(m[2])]));
 
-        if (extractedCoords.length >= 2) {
+        if (extractedCoords.length >= 2 && !isPlaceOnlyUrl) {
             if (!origin) origin = extractedCoords[0];
             if (!destination) destination = extractedCoords[extractedCoords.length - 1];
         } else if (extractedCoords.length === 1) {
             if (!destination && origin) destination = extractedCoords[0];
             else if (!origin && destination) origin = extractedCoords[0];
             else if (!destination) destination = extractedCoords[0];
+        } else if (extractedCoords.length >= 2 && isPlaceOnlyUrl) {
+            destination = extractedCoords[extractedCoords.length - 1];
         }
     }
 
@@ -75,7 +214,11 @@ function extractCoordinates(urlStr) {
     if (!destination && !origin) {
         const atMatch = urlStr.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
         if (atMatch) {
-             destination = [parseFloat(atMatch[1]), parseFloat(atMatch[2])];
+             if (isPlaceOnlyUrl) {
+               destination = [parseFloat(atMatch[1]), parseFloat(atMatch[2])];
+             } else {
+               destination = [parseFloat(atMatch[1]), parseFloat(atMatch[2])];
+             }
         }
     }
     
@@ -91,7 +234,7 @@ function extractCoordinates(urlStr) {
         return { error: 'Không tìm thấy tọa độ trong link.' };
     }
 
-    return { origin, destination };
+    return normalizeCoordinateResult({ origin, destination });
   } catch (error) {
     return { error: error.message };
   }
@@ -99,19 +242,73 @@ function extractCoordinates(urlStr) {
 
 router.post('/parse-google-maps-link', async (req, res) => {
   const { url } = req.body;
+  const normalizedUrl = normalizeInputUrl(url);
 
-  if (!url || typeof url !== 'string') {
+  if (!normalizedUrl) {
     return res.json({ success: false, message: 'URL không hợp lệ' });
   }
 
-  console.log(`[Parser] Đang xử lý link: ${url}`);
+  if (!isGoogleMapsUrl(normalizedUrl)) {
+    return res.json({ success: false, message: 'Link không đúng định dạng Google Maps.' });
+  }
+
+  console.log(`[Parser] Đang xử lý link: ${normalizedUrl}`);
 
   try {
+    const directExtracted = normalizeCoordinateResult(extractCoordinates(normalizedUrl));
+    const fallbackExtracted = (!directExtracted.error && (directExtracted.origin || directExtracted.destination))
+      ? directExtracted
+      : null;
+    const isPlaceOnlyUrl = isPlaceOnlyGoogleMapsUrl(normalizedUrl);
+    const isQueryPlaceUrl = isMapsQueryPlaceUrl(normalizedUrl);
+    const directPlaceDestination = isPlaceOnlyUrl
+      ? (extractPreferredPlaceDestination(normalizedUrl) || directExtracted.destination)
+      : null;
+
+    if (isQueryPlaceUrl) {
+      const geocodedDestination = await geocodeGoogleMapsQuery(normalizedUrl);
+      if (geocodedDestination) {
+        return res.json({
+          success: true,
+          origin: null,
+          destination: geocodedDestination,
+          resolvedUrl: normalizedUrl
+        });
+      }
+    }
+
+    if (directPlaceDestination) {
+      return res.json({
+        success: true,
+        origin: null,
+        destination: directPlaceDestination,
+        resolvedUrl: normalizedUrl
+      });
+    }
+
+    if (directExtracted.origin && directExtracted.destination) {
+      return res.json({
+        success: true,
+        origin: directExtracted.origin,
+        destination: directExtracted.destination,
+        resolvedUrl: normalizedUrl
+      });
+    }
+
+    if (isPlaceOnlyUrl && directExtracted.destination) {
+      return res.json({
+        success: true,
+        origin: null,
+        destination: directExtracted.destination,
+        resolvedUrl: normalizedUrl
+      });
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     
     // Sử dụng User-Agent của iPhone để Google trả về phiên bản Mobile linh hoạt hơn
-    const response = await fetch(url, {
+    const response = await fetch(normalizedUrl, {
       redirect: 'follow',
       signal: controller.signal,
       headers: {
@@ -125,12 +322,49 @@ router.post('/parse-google-maps-link', async (req, res) => {
 
     const finalUrl = response.url;
     console.log(`[Parser] URL sau redirect: ${finalUrl}`);
+    const isFinalPlaceOnlyUrl = isPlaceOnlyGoogleMapsUrl(finalUrl);
+    const isFinalRouteUrl = isRouteGoogleMapsUrl(finalUrl);
+    const isFinalQueryPlaceUrl = isMapsQueryPlaceUrl(finalUrl);
+    const preferredFinalPlaceDestination = isFinalPlaceOnlyUrl
+      ? extractPreferredPlaceDestination(finalUrl)
+      : null;
+
+    if (isFinalQueryPlaceUrl) {
+      const geocodedDestination = await geocodeGoogleMapsQuery(finalUrl);
+      if (geocodedDestination) {
+        return res.json({
+          success: true,
+          origin: null,
+          destination: geocodedDestination,
+          resolvedUrl: finalUrl
+        });
+      }
+    }
 
     // Ưu tiên 1: Tách từ URL
-    let extracted = extractCoordinates(finalUrl);
+    let extracted = normalizeCoordinateResult(extractCoordinates(finalUrl));
+
+    if (preferredFinalPlaceDestination) {
+      return res.json({
+        success: true,
+        origin: null,
+        destination: preferredFinalPlaceDestination,
+        resolvedUrl: finalUrl
+      });
+    }
+
+    if (isFinalPlaceOnlyUrl && extracted.destination) {
+      return res.json({
+        success: true,
+        origin: null,
+        destination: extracted.destination,
+        resolvedUrl: finalUrl
+      });
+    }
 
     // Ưu tiên 2: Nếu URL không đủ, quét nội dung HTML bằng các kỹ thuật mạnh hơn
     const html = await response.text();
+    let preferredPlaceDestination = null;
 
     if (extracted.error || !extracted.origin || !extracted.destination) {
       console.log('[Parser] Đang quét sâu nội dung HTML...');
@@ -152,7 +386,12 @@ router.post('/parse-google-maps-link', async (req, res) => {
       
       for (const m of metaMatches) {
         const decoded = decodeURIComponent(m[1].replace(/&amp;/g, '&'));
-        const mExtracted = extractCoordinates(decoded);
+        const mExtracted = normalizeCoordinateResult(extractCoordinates(decoded));
+
+        if (!preferredPlaceDestination && isPlaceOnlyGoogleMapsUrl(decoded) && mExtracted?.destination) {
+          preferredPlaceDestination = mExtracted.destination;
+        }
+
         if (!mExtracted.error) {
           if (!extracted.origin) extracted.origin = mExtracted.origin;
           if (!extracted.destination) extracted.destination = mExtracted.destination;
@@ -173,14 +412,36 @@ router.post('/parse-google-maps-link', async (req, res) => {
 
       if (rawMatches.length > 0) {
         console.log(`[Parser] Quét HTML thấy ${rawMatches.length} tọa độ phù hợp.`);
-        // Thông thường cặp đầu tiên là điểm đi hoặc điểm đến
-        if (!extracted.origin) extracted.origin = rawMatches[0];
-        if (!extracted.destination) extracted.destination = rawMatches[rawMatches.length - 1];
+        if (isFinalPlaceOnlyUrl) {
+          if (!extracted.destination) extracted.destination = rawMatches[rawMatches.length - 1];
+          extracted.origin = null;
+        } else {
+          if (!extracted.origin) extracted.origin = rawMatches[0];
+          if (!extracted.destination) extracted.destination = rawMatches[rawMatches.length - 1];
+        }
         delete extracted.error;
       }
     }
 
+    if (preferredPlaceDestination && !isFinalRouteUrl) {
+      extracted = {
+        origin: null,
+        destination: preferredPlaceDestination,
+      };
+    }
+
+    extracted = normalizeCoordinateResult(extracted);
+
     if (!extracted.destination) {
+      if (fallbackExtracted?.destination) {
+        return res.json({
+          success: true,
+          origin: extracted.origin || fallbackExtracted.origin || null,
+          destination: fallbackExtracted.destination,
+          resolvedUrl: finalUrl || normalizedUrl
+        });
+      }
+
       return res.json({
         success: false,
         message: 'Không tìm thấy thông tin tọa độ. Vui lòng thử dùng Link đầy đủ từ trình duyệt.',
@@ -198,6 +459,18 @@ router.post('/parse-google-maps-link', async (req, res) => {
 
   } catch (err) {
     console.error('[Parser] Lỗi nghiêm trọng:', err);
+
+    const fallbackExtracted = normalizeCoordinateResult(extractCoordinates(normalizedUrl));
+    if (!fallbackExtracted.error && fallbackExtracted.destination) {
+      return res.json({
+        success: true,
+        origin: fallbackExtracted.origin || null,
+        destination: fallbackExtracted.destination,
+        resolvedUrl: normalizedUrl,
+        warning: 'Đã dùng tọa độ đọc trực tiếp từ link do không kết nối được tới Google Maps.'
+      });
+    }
+
     return res.json({
       success: false,
       message: 'Lỗi kết nối đến Google Maps.',

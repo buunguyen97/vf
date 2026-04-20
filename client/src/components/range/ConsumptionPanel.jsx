@@ -1,5 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { Zap } from 'lucide-react';
+import {
+  getAdjustedDefaultConsumption,
+  getDefaultKmPer1Percent,
+  getEnergyPer1PercentWh,
+} from '../../utils/consumption';
 
 // Inline editable badge for the header value
 function EditableBadge({ value, unit, min, max, step, onChange }) {
@@ -66,18 +71,17 @@ function EditableBadge({ value, unit, min, max, step, onChange }) {
 
 export default function ConsumptionPanel({ conditions, setConditions, vehicles, selectedVehicleId }) {
   const selectedVehicle = vehicles?.find(v => v.id === selectedVehicleId);
-  const defaultConsumption = selectedVehicle?.base_consumption_wh_km || 150;
+  const defaultConsumption = getAdjustedDefaultConsumption(selectedVehicle);
   const currentConsumption = conditions.consumptionWhKm || defaultConsumption;
 
   // Battery capacity
-  const batteryCapacity = selectedVehicle?.battery_capacity_kwh || 60;
-  const energyPer1Percent = batteryCapacity * 1000 * 0.01; // Wh per 1%
+  const energyPer1Percent = getEnergyPer1PercentWh(selectedVehicle);
 
   // km per 1% = energyPer1Percent / consumptionWhKm
   const kmPer1Percent = parseFloat((energyPer1Percent / currentConsumption).toFixed(1));
 
   // Default km per 1% from vehicle
-  const defaultKmPer1Percent = parseFloat((energyPer1Percent / defaultConsumption).toFixed(1));
+  const defaultKmPer1Percent = getDefaultKmPer1Percent(selectedVehicle);
 
   // Min/max for slider
   const minKm = parseFloat((energyPer1Percent / 350).toFixed(1));

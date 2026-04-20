@@ -3,6 +3,7 @@ import Layout from './components/layout/Layout';
 import MapView from './components/map/MapView';
 import PlannerControls from './components/planner/PlannerControls';
 import { evApi } from './services/api';
+import { getAdjustedDefaultConsumption } from './utils/consumption';
 
 const cloneRouteSnapshot = (snapshot) => {
   if (!snapshot) return null;
@@ -21,6 +22,15 @@ const summarizeRouteSnapshot = (snapshot) => JSON.stringify({
   polylinePoints: snapshot?.routeData?.polylineCoords?.length ?? 0,
   oldPolylinePoints: snapshot?.oldRoutePolyline?.length ?? 0,
 });
+
+const NEARBY_STATION_PANEL_DELAY_MS = 3000;
+
+const getApiErrorMessage = (error) => (
+  error?.response?.data?.message ||
+  error?.response?.data?.error ||
+  error?.message ||
+  'Không thể gợi ý trạm sạc cho tuyến đường này.'
+);
 
 function App() {
   const [vehicles, setVehicles] = useState([]);
@@ -49,14 +59,23 @@ function App() {
   const [selectedStation, setSelectedStation] = useState(null);
   const [lastViewedStationId, setLastViewedStationId] = useState(null);
   const [reachability, setReachability] = useState(null);
+  const [routeError, setRouteError] = useState('');
 
   const [sheetOpen, setSheetOpen] = useState(true);
   const [locationName, setLocationName] = useState('');
   const [showStartupLoader, setShowStartupLoader] = useState(true);
-  const [isAmbientLoading, setIsAmbientLoading] = useState(true);
+  const [isAmbientLoading, setIsAmbientLoading] = useState(false);
   const [isSuggestingNearbyStations, setIsSuggestingNearbyStations] = useState(false);
+  const [sheetDragOffset, setSheetDragOffset] = useState(0);
   const [routeHistoryState, setRouteHistoryState] = useState({ entries: [], index: -1 });
   const isRestoringRouteRef = useRef(false);
+  const nearbySuggestionStartedAtRef = useRef(0);
+  const sheetDragStateRef = useRef({
+    active: false,
+    startY: 0,
+    deltaY: 0,
+    moved: false,
+  });
 
   const selectedVehicle = useMemo(
     () => vehicles.find((vehicle) => vehicle.id === selectedVehicleId) || null,
@@ -113,25 +132,35 @@ function App() {
     setSelectedStation(null);
     setLastViewedStationId(null);
     setReachability(null);
+    setRouteError('');
     setRouteHistoryState({ entries: [], index: -1 });
   };
 
   const handleParsedLink = ({ origin, destination: dest }) => {
-    if (origin) {
-      setUserLocation(origin);
-      setGeoResolved(true);
-      fetchWeatherForLocation(origin[0], origin[1]);
-    }
+    const resolvedDestination = dest || origin || null;
+    const isFullRoute = Boolean(origin && dest);
 
-    if (dest) {
-      setDestination(dest);
+    if (resolvedDestination) {
+      if (isFullRoute) {
+        setUserLocation(origin);
+        setGeoResolved(true);
+        fetchWeatherForLocation(origin[0], origin[1]);
+      } else {
+        setUserLocation(null);
+        setGeoResolved(false);
+        acquireCurrentLocation();
+      }
+
+      setDestination(resolvedDestination);
       setWaypoint(null);
       setOldRoutePolyline(null);
       setRouteData(null);
       setSelectedStation(null);
       setLastViewedStationId(null);
       setReachability(null);
+      setRouteError('');
       setRouteHistoryState({ entries: [], index: -1 });
+      setSheetOpen(true);
     }
   };
 
@@ -164,6 +193,7 @@ function App() {
     setSelectedStation(null);
     setLastViewedStationId(null);
     setReachability(null);
+    setRouteError('');
     setSheetOpen(false);
   };
 
@@ -174,7 +204,7 @@ function App() {
         setVehicles(data);
         if (data.length > 0) {
           setSelectedVehicleId(data[0].id);
-          setConditions((prev) => ({ ...prev, consumptionWhKm: data[0].base_consumption_wh_km }));
+          setConditions((prev) => ({ ...prev, consumptionWhKm: getAdjustedDefaultConsumption(data[0]) }));
         }
       })
       .catch((err) => console.error(err));
@@ -190,7 +220,7 @@ function App() {
   useEffect(() => {
     if (!selectedVehicle) return;
 
-    setConditions((prev) => ({ ...prev, consumptionWhKm: selectedVehicle.base_consumption_wh_km }));
+    setConditions((prev) => ({ ...prev, consumptionWhKm: getAdjustedDefaultConsumption(selectedVehicle) }));
   }, [selectedVehicle]);
 
   useEffect(() => {
@@ -221,6 +251,7 @@ function App() {
     setIsRouting(true);
     setSelectedStation(null);
     setReachability(null);
+    setRouteError('');
     if (options.previousPolyline !== undefined) {
       setOldRoutePolyline(nextOldRoutePolyline);
     }
@@ -233,10 +264,15 @@ function App() {
         currentBattery: batteryPercent,
         targetBattery: targetBatteryPercent,
         vehicleId: selectedVehicleId,
+        vehicleName: selectedVehicle?.name,
         conditions,
         routeIndex,
       })
       .then((data) => {
+        if (!data?.polylineCoords?.length) {
+          throw new Error('Không nhận được dữ liệu tuyến đường từ máy chủ.');
+        }
+
         setRouteData(data);
         setSheetOpen(false);
         pushRouteSnapshot({
@@ -245,7 +281,11 @@ function App() {
           oldRoutePolyline: nextOldRoutePolyline,
         });
       })
-      .catch(console.error)
+      .catch((error) => {
+        console.error(error);
+        setRouteError(getApiErrorMessage(error));
+        setSheetOpen(true);
+      })
       .finally(() => setIsRouting(false));
   };
 
@@ -254,6 +294,9 @@ function App() {
       if (destination) {
         calculateRouteAndStations();
       } else {
+        nearbySuggestionStartedAtRef.current = Date.now();
+        setRouteError('');
+        setSheetOpen(true);
         setIsSuggestingNearbyStations(true);
       }
       return;
@@ -266,13 +309,65 @@ function App() {
     if (!isSuggestingNearbyStations) return;
 
     if (!isAmbientLoading) {
-      setSheetOpen(false);
-      const timer = setTimeout(() => setIsSuggestingNearbyStations(false), 650);
+      const elapsed = Date.now() - nearbySuggestionStartedAtRef.current;
+      const remaining = Math.max(0, NEARBY_STATION_PANEL_DELAY_MS - elapsed);
+      const timer = setTimeout(() => {
+        setSheetOpen(false);
+        setIsSuggestingNearbyStations(false);
+      }, remaining);
+
       return () => clearTimeout(timer);
     }
 
     return undefined;
   }, [isAmbientLoading, isSuggestingNearbyStations]);
+
+  const handleSheetDragStart = (clientY) => {
+    if (typeof window !== 'undefined' && window.innerWidth >= 768) return;
+
+    sheetDragStateRef.current = {
+      active: true,
+      startY: clientY,
+      deltaY: 0,
+      moved: false,
+    };
+    setSheetDragOffset(0);
+  };
+
+  const handleSheetDragMove = (clientY) => {
+    if (!sheetDragStateRef.current.active) return;
+
+    const rawDelta = clientY - sheetDragStateRef.current.startY;
+    const limitedDelta = Math.max(-220, Math.min(220, rawDelta));
+
+    sheetDragStateRef.current.deltaY = limitedDelta;
+    sheetDragStateRef.current.moved = Math.abs(limitedDelta) > 8;
+    setSheetDragOffset(limitedDelta);
+  };
+
+  const handleSheetDragEnd = () => {
+    if (!sheetDragStateRef.current.active) return;
+
+    const { deltaY } = sheetDragStateRef.current;
+    sheetDragStateRef.current.active = false;
+
+    if (deltaY <= -50) {
+      setSheetOpen(true);
+    } else if (deltaY >= 50) {
+      setSheetOpen(false);
+    }
+
+    setSheetDragOffset(0);
+  };
+
+  const handleSheetHandleClick = () => {
+    if (sheetDragStateRef.current.moved) {
+      sheetDragStateRef.current.moved = false;
+      return;
+    }
+
+    setSheetOpen(!sheetOpen);
+  };
 
   useEffect(() => {
     if (isRestoringRouteRef.current) {
@@ -321,6 +416,7 @@ function App() {
         batteryPercent,
         targetBattery: targetBatteryPercent,
         vehicleId: selectedVehicleId,
+        vehicleName: selectedVehicle?.name,
         ...conditions,
       });
       setReachability(data);
@@ -342,6 +438,7 @@ function App() {
     setSelectedStation(null);
     setLastViewedStationId(null);
     setReachability(null);
+    setRouteError('');
     setRouteHistoryState({ entries: [], index: -1 });
   };
 
@@ -361,14 +458,20 @@ function App() {
     setRouteHistoryState((prev) => ({ ...prev, index: nextIndex }));
   };
 
-  const isStationLoading = isRouting || isSuggestingNearbyStations || (!routeData && isAmbientLoading);
+  const isStationLoading = isRouting || isSuggestingNearbyStations;
   const stationLoadingLabel = isRouting
     ? 'ĐANG GỢI Ý TRẠM SẠC'
     : 'ĐANG TẢI TRẠM GẦN BẠN';
 
   const plannerContent = (
     <div className="space-y-3">
-      {!showStartupLoader && !routeData && isAmbientLoading && (
+      {routeError && (
+        <div className="rounded-2xl border border-[#DA303E]/30 bg-[#DA303E]/10 px-4 py-3 text-sm text-red-200 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
+          {routeError}
+        </div>
+      )}
+
+      {!showStartupLoader && !routeData && geoResolved && isAmbientLoading && (
         <div className="rounded-2xl border border-white/10 bg-[#0B0B0B] px-4 py-3 shadow-[0_18px_40px_rgba(0,0,0,0.32)]">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -418,6 +521,9 @@ function App() {
   const collapsedPeekClass = selectedStation
     ? 'translate-y-[calc(100%-88px)]'
     : 'translate-y-[calc(100%-118px)]';
+  const sheetTransformStyle = sheetDragOffset !== 0
+    ? { transform: `translateY(${sheetDragOffset}px)` }
+    : undefined;
 
   return (
     <Layout onOpenMap={() => setSheetOpen(false)}>
@@ -444,10 +550,27 @@ function App() {
              ${!shouldPrioritizePlanner && sheetOpen ? 'h-[82vh] translate-y-0' : ''}
              ${!shouldPrioritizePlanner && !sheetOpen ? `h-[82vh] ${collapsedPeekClass}` : ''}
              `}
+          style={sheetTransformStyle}
         >
           <div
             className={`md:hidden flex w-full shrink-0 cursor-pointer flex-col items-center justify-center border-b border-white/5 ${shouldPrioritizePlanner ? 'p-4' : 'px-4 py-3'}`}
-            onClick={() => setSheetOpen(!sheetOpen)}
+            onClick={handleSheetHandleClick}
+            onMouseDown={(event) => handleSheetDragStart(event.clientY)}
+            onMouseMove={(event) => handleSheetDragMove(event.clientY)}
+            onMouseUp={handleSheetDragEnd}
+            onMouseLeave={handleSheetDragEnd}
+            onTouchStart={(event) => {
+              const touch = event.touches[0];
+              if (!touch) return;
+              handleSheetDragStart(touch.clientY);
+            }}
+            onTouchMove={(event) => {
+              const touch = event.touches[0];
+              if (!touch) return;
+              handleSheetDragMove(touch.clientY);
+            }}
+            onTouchEnd={handleSheetDragEnd}
+            onTouchCancel={handleSheetDragEnd}
           >
             <div className="mb-2 h-1.5 w-16 rounded-full bg-white/20"></div>
             <div className="relative flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-white/40">

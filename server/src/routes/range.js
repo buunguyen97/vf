@@ -1,18 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const { getDb } = require('../database/init');
 const { estimateRange } = require('../services/rangeEngine');
+const { resolveVehicle } = require('../services/vehicleResolver');
 
 router.post('/estimate-range', (req, res) => {
   try {
-    const { batteryPercent, vehicleId, temperature, speed, acOn, trafficJam, consumptionWhKm } = req.body;
+    const { batteryPercent, vehicleId, vehicleName, temperature, speed, acOn, consumptionWhKm } = req.body;
 
     if (batteryPercent === undefined || batteryPercent === null || !vehicleId) {
       return res.status(400).json({ error: 'batteryPercent and vehicleId are required' });
     }
 
-    const db = getDb();
-    const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicleId);
+    const vehicle = resolveVehicle({ vehicleId, vehicleName });
 
     if (!vehicle) {
       return res.status(404).json({ error: 'Vehicle not found' });
@@ -26,7 +25,6 @@ router.post('/estimate-range', (req, res) => {
       temperature: temperature || 25,
       speed: speed || 60,
       acOn: acOn !== undefined ? acOn : true,
-      trafficJam: trafficJam || 0,
     });
 
     res.json(result);

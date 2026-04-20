@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDb } = require('../database/init');
 const { estimateRange } = require('../services/rangeEngine');
+const { resolveVehicle } = require('../services/vehicleResolver');
 
 // Helper: Haversine distance
 function getDistance(lat1, lon1, lat2, lon2) {
@@ -14,15 +15,41 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+function normalizeCoordinatePair(coords) {
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+
+  const lat = Number(coords[0]);
+  const lon = Number(coords[1]);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return [lat, lon];
+}
+
 router.post('/optimal-route', async (req, res) => {
   try {
-    const { origin, destination, waypoint, currentBattery, targetBattery, vehicleId, conditions } = req.body;
+    const { conditions } = req.body;
+    const origin = normalizeCoordinatePair(req.body.origin);
+    const destination = normalizeCoordinatePair(req.body.destination);
+    const waypoint = req.body.waypoint ? normalizeCoordinatePair(req.body.waypoint) : null;
+    const currentBattery = Number(req.body.currentBattery);
+    const targetBattery = Number(req.body.targetBattery);
+    const vehicleId = Number(req.body.vehicleId);
+    const vehicleName = req.body.vehicleName;
 
-    if (!origin || !destination || !currentBattery || targetBattery === undefined || !vehicleId) {
-      return res.status(400).json({ error: 'Missing required parameters' });
+    if (!origin || !destination || !Number.isFinite(currentBattery) || !Number.isFinite(targetBattery) || !Number.isFinite(vehicleId)) {
+      return res.status(400).json({
+        error: 'Thiếu hoặc sai dữ liệu đầu vào cho tính tuyến đường.',
+        details: {
+          originValid: Boolean(origin),
+          destinationValid: Boolean(destination),
+          currentBatteryValid: Number.isFinite(currentBattery),
+          targetBatteryValid: Number.isFinite(targetBattery),
+          vehicleIdValid: Number.isFinite(vehicleId),
+        },
+      });
     }
 
-    const routeIndex = req.body.routeIndex || 0;
+    const routeIndex = Number.isFinite(Number(req.body.routeIndex)) ? Number(req.body.routeIndex) : 0;
 
     let routesArray = [];
 
@@ -119,7 +146,7 @@ router.post('/optimal-route', async (req, res) => {
 
     // 2. Fetch Vehicle & compute consumption
     const db = getDb();
-    const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicleId);
+    const vehicle = resolveVehicle({ vehicleId, vehicleName });
     if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
 
     const { adjustedConsumptionWhKm } = estimateRange({
@@ -130,7 +157,6 @@ router.post('/optimal-route', async (req, res) => {
       temperature: conditions?.temperature || 32,
       speed: conditions?.speed || 60,
       acOn: conditions?.acOn !== undefined ? conditions.acOn : true,
-      trafficJam: conditions?.trafficJam || 0,
     });
 
     const energyCapacityWh = vehicle.battery_capacity_kwh * 1000;
