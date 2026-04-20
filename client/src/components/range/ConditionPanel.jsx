@@ -90,10 +90,8 @@ export default function ConditionPanel({ conditions, setConditions, locationName
   const softenedSpeedFactor = softenFactor(speedFactor);
   const softenedTempFactor = softenFactor(tempFactor);
   const acFactor = acOn ? 1.05 : 1.0;
-
-  const trafficPenalty = (conditions.trafficJam || 0) / 15 * 0.5;
   const baseDegradation = ((softenedSpeedFactor * softenedTempFactor * acFactor) - 1) * 100 / 2.5;
-  const degradationPercent = Math.max(0, Number((baseDegradation + trafficPenalty).toFixed(1)));
+  const degradationPercent = Math.max(0, Number(baseDegradation.toFixed(1)));
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#111111] p-3 shadow-lg md:p-3.5">
@@ -154,34 +152,9 @@ export default function ConditionPanel({ conditions, setConditions, locationName
         </div>
 
         <div className="flex items-center justify-between rounded-lg border border-white/5 bg-black/30 px-2.5 py-2 text-[11px] md:text-xs">
-          <span className="font-medium text-white/70">Kẹt xe (dự kiến)</span>
-          <div className="flex items-center gap-1">
-            {[0, 15, 30, 45, 60].map((mins) => (
-              <button
-                key={mins}
-                type="button"
-                onClick={() => setConditions({ ...conditions, trafficJam: mins })}
-                className={`rounded px-1.5 py-0.5 text-[10px] font-bold transition-all ${
-                  (conditions.trafficJam || 0) === mins
-                    ? 'bg-[#1464F4] text-white'
-                    : 'bg-white/5 text-white/40 hover:bg-white/10'
-                }`}
-              >
-                {mins === 0 ? 'KO' : `${mins}'`}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between rounded-lg border border-white/5 bg-black/30 px-2.5 py-2 text-[11px] md:text-xs">
           <span className="font-medium text-white/70">Trừ hao tổng pin</span>
           <span className={`font-mono font-bold ${degradationPercent > 0 ? 'text-[#DA303E]' : 'text-[#00B14F]'}`}>
             {degradationPercent}%
-            {conditions.trafficJam > 0 && (
-              <span className="ml-1 text-[9px] font-normal text-white/40">
-                (+{(conditions.trafficJam / 15 * 0.5).toFixed(1)}% kẹt xe)
-              </span>
-            )}
           </span>
         </div>
 

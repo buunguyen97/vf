@@ -70,7 +70,6 @@ function EditableBadge({ value, unit, min, max, step, onChange }) {
 }
 
 export default function ConsumptionPanel({ conditions, setConditions, vehicles, selectedVehicleId }) {
-  const displayOffsetKmPerPercent = 0.2;
   const selectedVehicle = vehicles?.find(v => v.id === selectedVehicleId);
   const defaultConsumption = getAdjustedDefaultConsumption(selectedVehicle);
   const currentConsumption = conditions.consumptionWhKm || defaultConsumption;
@@ -80,15 +79,15 @@ export default function ConsumptionPanel({ conditions, setConditions, vehicles, 
 
   // km per 1% = energyPer1Percent / consumptionWhKm
   const rawKmPer1Percent = energyPer1Percent / currentConsumption;
-  const kmPer1Percent = parseFloat(Math.max(0.1, rawKmPer1Percent - displayOffsetKmPerPercent).toFixed(1));
+  const kmPer1Percent = parseFloat(rawKmPer1Percent.toFixed(1));
 
   // Default km per 1% from vehicle
   const rawDefaultKmPer1Percent = energyPer1Percent / defaultConsumption;
-  const defaultKmPer1Percent = parseFloat(Math.max(0.1, rawDefaultKmPer1Percent - displayOffsetKmPerPercent).toFixed(1));
+  const defaultKmPer1Percent = getDefaultKmPer1Percent(selectedVehicle);
 
   // Min/max for slider
-  const minKm = parseFloat(Math.max(0.1, (energyPer1Percent / 350) - displayOffsetKmPerPercent).toFixed(1));
-  const maxKm = parseFloat(Math.max(0.1, (energyPer1Percent / 50) - displayOffsetKmPerPercent).toFixed(1));
+  const minKm = parseFloat((energyPer1Percent / 350).toFixed(1));
+  const maxKm = parseFloat((energyPer1Percent / 50).toFixed(1));
 
   // Local slider state for smooth dragging (avoids parent re-render lag)
   const [sliderValue, setSliderValue] = useState(kmPer1Percent);
@@ -102,8 +101,7 @@ export default function ConsumptionPanel({ conditions, setConditions, vehicles, 
   }, [kmPer1Percent]);
 
   // Commit: convert km/1% back to Wh/km
-  const commitValue = (displayKm) => {
-    const newKm = displayKm + displayOffsetKmPerPercent;
+  const commitValue = (newKm) => {
     if (newKm <= 0) return;
     const newConsumption = Math.round(energyPer1Percent / newKm);
     setConditions({ ...conditions, consumptionWhKm: Math.max(50, Math.min(350, newConsumption)) });

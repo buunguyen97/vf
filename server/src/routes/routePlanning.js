@@ -28,6 +28,7 @@ function normalizeCoordinatePair(coords) {
 router.post('/optimal-route', async (req, res) => {
   try {
     const { routes, currentBattery, targetBattery, vehicleId, conditions } = req.body;
+    const vehicleName = req.body.vehicleName;
 
     if (!routes || !routes.length || !currentBattery || targetBattery === undefined || !vehicleId) {
       return res.status(400).json({ error: 'Missing required parameters' });

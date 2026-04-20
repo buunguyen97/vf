@@ -43,7 +43,6 @@ function App() {
     temperature: 32,
     acOn: true,
     consumptionWhKm: null,
-    trafficJam: 0,
   });
 
   const [estimatedRange, setEstimatedRange] = useState(0);
