@@ -633,7 +633,7 @@ export default function MapView({
       {geoResolved && showAlternativeRouteHint && !showAmbientLoadingOverlay && (
         <div className="pointer-events-none absolute left-1/2 top-4 z-[1850] w-[min(330px,calc(100%-36px))] -translate-x-1/2">
           <div className="rounded-full border border-white/10 bg-black/60 px-4 py-2 text-center text-[11px] font-medium tracking-[0.01em] text-white/78 shadow-[0_10px_28px_rgba(0,0,0,0.22)] backdrop-blur-md">
-            Nhấn đúp vào tuyến phụ để đổi tuyến
+            Nhấn giữ vào tuyến phụ để đổi tuyến
           </div>
         </div>
       )}
