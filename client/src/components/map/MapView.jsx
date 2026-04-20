@@ -5,6 +5,23 @@ import L from 'leaflet';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Coffee, Navigation } from 'lucide-react';
 import { evApi } from '../../services/api';
 
+const VIETNAM_BOUNDS = L.latLngBounds(
+  [7.8, 102.0],
+  [23.6, 109.9],
+);
+
+const clampLatLngToVietnam = ([lat, lng]) => ([
+  Math.min(VIETNAM_BOUNDS.getNorth(), Math.max(VIETNAM_BOUNDS.getSouth(), lat)),
+  Math.min(VIETNAM_BOUNDS.getEast(), Math.max(VIETNAM_BOUNDS.getWest(), lng)),
+]);
+
+const getVietnamSafeBounds = (coords) => {
+  if (!Array.isArray(coords) || coords.length === 0) return VIETNAM_BOUNDS;
+
+  const clampedCoords = coords.map(clampLatLngToVietnam);
+  return L.latLngBounds(clampedCoords);
+};
+
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -159,7 +176,7 @@ function MapUpdater({ center, geoResolved }) {
 
   useEffect(() => {
     if (geoResolved && !hasCenteredOnGeo.current) {
-      map.setView(center, 14);
+      map.setView(clampLatLngToVietnam(center), 14);
       hasCenteredOnGeo.current = true;
     }
   }, [center, geoResolved, map]);
@@ -179,7 +196,7 @@ function MapFitter({ routeCoords }) {
       if (lastRouteKeyRef.current === routeKey) return;
       lastRouteKeyRef.current = routeKey;
 
-      const bounds = L.latLngBounds(routeCoords);
+      const bounds = getVietnamSafeBounds(routeCoords);
       const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
       const bottomPadding = isMobile ? 250 : 60;
       map.fitBounds(bounds, {
@@ -207,7 +224,7 @@ function PreviewRouteFitter({ routeCoords, active }) {
     if (lastRouteKeyRef.current === routeKey) return;
     lastRouteKeyRef.current = routeKey;
 
-    const bounds = L.latLngBounds(routeCoords);
+    const bounds = getVietnamSafeBounds(routeCoords);
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
     const bottomPadding = isMobile ? 260 : 80;
     map.fitBounds(bounds, {
@@ -522,7 +539,7 @@ export default function MapView({
     return () => clearTimeout(timer);
   }, [userLocation, routeData, onAmbientLoadingChange]);
 
-  const center = userLocation || [21.0285, 105.8542];
+  const center = clampLatLngToVietnam(userLocation || [16.0471, 108.2068]);
 
   const { displayStations, optimalStationIds } = useMemo(() => {
     if (routeData) {
@@ -627,8 +644,16 @@ export default function MapView({
         style={{ height: '100%', width: '100%', backgroundColor: '#0f172a' }}
         zoomControl={false}
         doubleClickZoom={false}
+        minZoom={5}
+        maxBounds={VIETNAM_BOUNDS}
+        maxBoundsViscosity={1.0}
       >
-        <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
+        <TileLayer
+          attribution="&copy; OpenStreetMap"
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          noWrap={true}
+          bounds={VIETNAM_BOUNDS}
+        />
 
         <MapClickHandler
           setDestination={setDestination}
