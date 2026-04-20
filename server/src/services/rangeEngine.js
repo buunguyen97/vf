@@ -16,7 +16,12 @@ function estimateRange({
   temperature,
   speed,
   acOn,
+  trafficJam = 0,
 }) {
+  // Traffic jam penalty: 15, 30, 45, 60 mins -> 0.5%, 1%, 1.5%, 2% battery cost
+  const trafficPenalty = (trafficJam / 15) * 0.5;
+  const effectiveBatteryPercent = Math.max(0, batteryPercent - trafficPenalty);
+
   let consumption = consumptionOverride || baseConsumption;
   let temperatureFactor = 1;
   let speedFactor = 1;
@@ -70,7 +75,7 @@ function estimateRange({
   consumption *= softenFactor(temperatureFactor);
   consumption *= softenFactor(speedFactor);
 
-  const availableEnergy = (batteryPercent / 100) * batteryCapacityKwh * 1000;
+  const availableEnergy = (effectiveBatteryPercent / 100) * batteryCapacityKwh * 1000;
   const safeAvailableEnergy = availableEnergy * 0.9;
   const estimatedRangeKm = safeAvailableEnergy / consumption;
 

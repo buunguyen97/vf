@@ -43,6 +43,7 @@ function App() {
     temperature: 32,
     acOn: true,
     consumptionWhKm: null,
+    trafficJam: 0,
   });
 
   const [estimatedRange, setEstimatedRange] = useState(0);
@@ -228,6 +229,13 @@ function App() {
 
     setIsCalculating(true);
     const debounceTimer = setTimeout(() => {
+      // Disable calculations for VF3
+      if (selectedVehicle?.name === 'VF3') {
+        setEstimatedRange(0);
+        setIsCalculating(false);
+        return;
+      }
+
       evApi
         .estimateRange({
           batteryPercent,

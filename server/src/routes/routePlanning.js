@@ -27,99 +27,16 @@ function normalizeCoordinatePair(coords) {
 
 router.post('/optimal-route', async (req, res) => {
   try {
-    const { conditions } = req.body;
-    const origin = normalizeCoordinatePair(req.body.origin);
-    const destination = normalizeCoordinatePair(req.body.destination);
-    const waypoint = req.body.waypoint ? normalizeCoordinatePair(req.body.waypoint) : null;
-    const currentBattery = Number(req.body.currentBattery);
-    const targetBattery = Number(req.body.targetBattery);
-    const vehicleId = Number(req.body.vehicleId);
-    const vehicleName = req.body.vehicleName;
+    const { routes, currentBattery, targetBattery, vehicleId, conditions } = req.body;
 
-    if (!origin || !destination || !Number.isFinite(currentBattery) || !Number.isFinite(targetBattery) || !Number.isFinite(vehicleId)) {
-      return res.status(400).json({
-        error: 'Thiếu hoặc sai dữ liệu đầu vào cho tính tuyến đường.',
-        details: {
-          originValid: Boolean(origin),
-          destinationValid: Boolean(destination),
-          currentBatteryValid: Number.isFinite(currentBattery),
-          targetBatteryValid: Number.isFinite(targetBattery),
-          vehicleIdValid: Number.isFinite(vehicleId),
-        },
-      });
+    if (!routes || !routes.length || !currentBattery || targetBattery === undefined || !vehicleId) {
+      return res.status(400).json({ error: 'Missing required parameters' });
     }
 
     const routeIndex = Number.isFinite(Number(req.body.routeIndex)) ? Number(req.body.routeIndex) : 0;
 
-    let routesArray = [];
-
-    // 1. Fetch Main Route
-    const waypointStr = waypoint ? `;${parseFloat(waypoint[1])},${parseFloat(waypoint[0])}` : '';
-    const osrmUrl = `http://router.project-osrm.org/route/v1/driving/${origin[1]},${origin[0]}${waypointStr};${destination[1]},${destination[0]}?overview=full&geometries=geojson&continue_straight=true`;
-    const routeRes = await fetch(osrmUrl);
-    
-    if (routeRes.ok) {
-        const routeData = await routeRes.json();
-        if (routeData.code === 'Ok' && routeData.routes.length > 0) {
-            routesArray.push(routeData.routes[0]);
-        }
-    }
-
-    if (routesArray.length === 0) {
-        return res.status(404).json({ error: 'No route found' });
-    }
-
-    // TẠO TUYẾN ĐƯỜNG PHỤ NẾU CHƯA CÓ WAYPOINT
-    if (!waypoint) {
-        const lat1 = origin[0];
-        const lon1 = origin[1];
-        const lat2 = destination[0];
-        const lon2 = destination[1];
-
-        const totalDistApprox = getDistance(lat1, lon1, lat2, lon2);
-        
-        if (totalDistApprox > 3) {
-            const midLat = (lat1 + lat2) / 2;
-            const midLon = (lon1 + lon2) / 2;
-
-            const dx = lon2 - lon1;
-            const dy = lat2 - lat1;
-            const len = Math.sqrt(dx*dx + dy*dy);
-            
-            if (len > 0) {
-                const nx = -dy / len;
-                const ny = dx / len;
-
-                // Shift by 20% of distance, cap at 30km
-                const shiftKm = Math.min(totalDistApprox * 0.2, 30);
-                const shiftDeg = shiftKm / 111.0;
-
-                const leftWp = [midLat + ny * shiftDeg, midLon + nx * shiftDeg];
-                const rightWp = [midLat - ny * shiftDeg, midLon - nx * shiftDeg];
-
-                const leftUrl = `http://router.project-osrm.org/route/v1/driving/${origin[1]},${origin[0]};${leftWp[1]},${leftWp[0]};${destination[1]},${destination[0]}?overview=full&geometries=geojson&continue_straight=true`;
-                const rightUrl = `http://router.project-osrm.org/route/v1/driving/${origin[1]},${origin[0]};${rightWp[1]},${rightWp[0]};${destination[1]},${destination[0]}?overview=full&geometries=geojson&continue_straight=true`;
-                
-                try {
-                  const [lRes, rRes] = await Promise.all([fetch(leftUrl), fetch(rightUrl)]);
-                  if (lRes.ok) {
-                      const lData = await lRes.json();
-                      if (lData.code === 'Ok' && lData.routes.length > 0) {
-                          const r = lData.routes[0];
-                          if (r.distance < routesArray[0].distance * 1.35) routesArray.push(r);
-                      }
-                  }
-                  if (rRes.ok) {
-                      const rData = await rRes.json();
-                      if (rData.code === 'Ok' && rData.routes.length > 0) {
-                          const r = rData.routes[0];
-                          if (r.distance < routesArray[0].distance * 1.35) routesArray.push(r);
-                      }
-                  }
-                } catch(e) {}
-            }
-        }
-    }
+    // Routes are now provided by the client (fetched from OSRM in browser)
+    let routesArray = routes;
 
     // Lọc trùng lặp do OSRM có thể nắn hai đường về cùng 1 đường cao tốc
     const uniqueRoutes = [];
@@ -335,8 +252,8 @@ router.post('/optimal-route', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error in /optimal-route:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Error in /optimal-route:', error.stack || error.message || error);
+    res.status(500).json({ error: 'Internal server error - Route Calculation Failed', details: error.message });
   }
 });
 

@@ -254,6 +254,16 @@ router.post('/parse-google-maps-link', async (req, res) => {
 
   console.log(`[Parser] Đang xử lý link: ${normalizedUrl}`);
 
+  let initialExtracted = extractCoordinates(url);
+  if (!initialExtracted.error && initialExtracted.destination) {
+    return res.json({
+      success: true,
+      origin: initialExtracted.origin,
+      destination: initialExtracted.destination,
+      resolvedUrl: url
+    });
+  }
+
   try {
     const directExtracted = normalizeCoordinateResult(extractCoordinates(normalizedUrl));
     const fallbackExtracted = (!directExtracted.error && (directExtracted.origin || directExtracted.destination))
