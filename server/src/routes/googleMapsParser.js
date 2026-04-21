@@ -163,20 +163,43 @@ async function geocodeTextAddress(address) {
   if (!address || typeof address !== 'string' || address.trim().length === 0) return null;
 
   try {
-    const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&countrycodes=vn&limit=1&accept-language=vi`;
-    const response = await axios.get(geocodeUrl, {
+    // Try original address first
+    let geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&countrycodes=vn&limit=1&accept-language=vi`;
+    let response = await axios.get(geocodeUrl, {
       headers: { 'User-Agent': 'VFRangeAssistant/1.0' },
       timeout: 20000,
       validateStatus: (status) => status < 500
     });
 
-    if (response.status !== 200) return null;
+    if (response.status === 200) {
+      const results = response.data;
+      const bestMatch = Array.isArray(results) ? results[0] : null;
+      if (bestMatch?.lat && bestMatch?.lon) {
+        return [parseFloat(bestMatch.lat), parseFloat(bestMatch.lon)];
+      }
+    }
 
-    const results = response.data;
-    const bestMatch = Array.isArray(results) ? results[0] : null;
-    if (!bestMatch?.lat || !bestMatch?.lon) return null;
+    // If failed, try simplifying the address (take first part before comma)
+    const simplifiedAddress = address.split(',')[0].trim();
+    if (simplifiedAddress && simplifiedAddress !== address) {
+      console.log(`[Geocode] Retrying with simplified address: ${simplifiedAddress}`);
+      geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(simplifiedAddress)}&format=json&countrycodes=vn&limit=1&accept-language=vi`;
+      response = await axios.get(geocodeUrl, {
+        headers: { 'User-Agent': 'VFRangeAssistant/1.0' },
+        timeout: 20000,
+        validateStatus: (status) => status < 500
+      });
 
-    return [parseFloat(bestMatch.lat), parseFloat(bestMatch.lon)];
+      if (response.status === 200) {
+        const results = response.data;
+        const bestMatch = Array.isArray(results) ? results[0] : null;
+        if (bestMatch?.lat && bestMatch?.lon) {
+          return [parseFloat(bestMatch.lat), parseFloat(bestMatch.lon)];
+        }
+      }
+    }
+
+    return null;
   } catch (err) {
     console.error('[Geocode] Lỗi geocode address:', err.message);
     return null;
@@ -457,6 +480,55 @@ router.post('/parse-google-maps-link', async (req, res) => {
       ? extractPreferredPlaceDestination(finalUrl)
       : null;
 
+    // Try to extract from saddr/daddr parameters in final URL first
+    let extractedOrigin = null;
+    let extractedDestination = null;
+
+    try {
+      const parsedUrl = new URL(finalUrl);
+      const saddr = parsedUrl.searchParams.get('saddr');
+      const daddr = parsedUrl.searchParams.get('daddr');
+
+      if (saddr || daddr) {
+        // Check if saddr is coordinates
+        if (saddr) {
+          const saddrMatch = saddr.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
+          if (saddrMatch) {
+            extractedOrigin = [parseFloat(saddrMatch[1]), parseFloat(saddrMatch[2])];
+          }
+        }
+
+        // Check if daddr is coordinates or address
+        if (daddr) {
+          const daddrMatch = daddr.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
+          if (daddrMatch) {
+            extractedDestination = [parseFloat(daddrMatch[1]), parseFloat(daddrMatch[2])];
+          } else {
+            // Try geocoding the address
+            const geocoded = await geocodeTextAddress(daddr);
+            if (geocoded) {
+              extractedDestination = geocoded;
+            }
+          }
+        }
+
+        // If we have both origin and destination, return immediately
+        if (extractedOrigin && extractedDestination) {
+          return res.json({
+            success: true,
+            origin: extractedOrigin,
+            destination: extractedDestination,
+            resolvedUrl: finalUrl
+          });
+        }
+
+        // If we only have origin but daddr geocoding failed, continue to try other extraction methods
+        // Don't return here, let it fall through to extractCoordinates
+      }
+    } catch (err) {
+      console.error('[Parser] Lỗi xử lý saddr/daddr từ finalUrl:', err.message);
+    }
+
     if (isFinalQueryPlaceUrl) {
       const geocodedDestination = await geocodeGoogleMapsQuery(finalUrl);
       if (geocodedDestination) {
@@ -471,6 +543,24 @@ router.post('/parse-google-maps-link', async (req, res) => {
 
     // Ưu tiên 1: Tách từ URL
     let extracted = normalizeCoordinateResult(extractCoordinates(finalUrl));
+
+    // Merge with extractedOrigin/extractedDestination from saddr/daddr
+    if (extractedOrigin && !extracted.origin) {
+      extracted.origin = extractedOrigin;
+    }
+    if (extractedDestination && !extracted.destination) {
+      extracted.destination = extractedDestination;
+    }
+
+    // If we have both now, return
+    if (extracted.origin && extracted.destination) {
+      return res.json({
+        success: true,
+        origin: extracted.origin,
+        destination: extracted.destination,
+        resolvedUrl: finalUrl
+      });
+    }
 
     // If no coordinates found but has text addresses, try geocoding
     if ((!extracted.origin || !extracted.destination) && isFinalRouteUrl) {
