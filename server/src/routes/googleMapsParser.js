@@ -17,6 +17,9 @@ function normalizeInputUrl(rawValue) {
 
   // Remove mobile app parameters that can cause issues
   normalized = normalized.replace(/[?&]g_st=[^&]*/g, '');
+  normalized = normalized.replace(/[?&]g_ep=[^&]*/g, '');
+  normalized = normalized.replace(/[?&]lucs=[^&]*/g, '');
+  normalized = normalized.replace(/[?&]skid=[^&]*/g, '');
 
   return normalized;
 }
@@ -139,7 +142,8 @@ async function geocodeGoogleMapsQuery(urlStr) {
     const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&countrycodes=vn&limit=1&accept-language=vi`;
     const response = await axios.get(geocodeUrl, {
       headers: { 'User-Agent': 'VFRangeAssistant/1.0' },
-      timeout: 10000
+      timeout: 20000,
+      validateStatus: (status) => status < 500
     });
 
     if (response.status !== 200) return null;
@@ -149,7 +153,8 @@ async function geocodeGoogleMapsQuery(urlStr) {
     if (!bestMatch?.lat || !bestMatch?.lon) return null;
 
     return [parseFloat(bestMatch.lat), parseFloat(bestMatch.lon)];
-  } catch {
+  } catch (err) {
+    console.error('[Geocode] Lỗi geocode query:', err.message);
     return null;
   }
 }
@@ -161,7 +166,8 @@ async function geocodeTextAddress(address) {
     const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&countrycodes=vn&limit=1&accept-language=vi`;
     const response = await axios.get(geocodeUrl, {
       headers: { 'User-Agent': 'VFRangeAssistant/1.0' },
-      timeout: 10000
+      timeout: 20000,
+      validateStatus: (status) => status < 500
     });
 
     if (response.status !== 200) return null;
@@ -171,7 +177,8 @@ async function geocodeTextAddress(address) {
     if (!bestMatch?.lat || !bestMatch?.lon) return null;
 
     return [parseFloat(bestMatch.lat), parseFloat(bestMatch.lon)];
-  } catch {
+  } catch (err) {
+    console.error('[Geocode] Lỗi geocode address:', err.message);
     return null;
   }
 }
@@ -292,13 +299,59 @@ router.post('/parse-google-maps-link', async (req, res) => {
 
   console.log(`[Parser] Đang xử lý link: ${normalizedUrl}`);
 
-  let initialExtracted = extractCoordinates(url);
+  let initialExtracted = extractCoordinates(normalizedUrl);
+
+  // Try to extract from saddr/daddr parameters first
+  try {
+    const parsedUrl = new URL(normalizedUrl);
+    const saddr = parsedUrl.searchParams.get('saddr');
+    const daddr = parsedUrl.searchParams.get('daddr');
+
+    if (saddr || daddr) {
+      let origin = null;
+      let destination = null;
+
+      // Check if saddr is coordinates
+      if (saddr) {
+        const saddrMatch = saddr.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
+        if (saddrMatch) {
+          origin = [parseFloat(saddrMatch[1]), parseFloat(saddrMatch[2])];
+        }
+      }
+
+      // Check if daddr is coordinates or address
+      if (daddr) {
+        const daddrMatch = daddr.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
+        if (daddrMatch) {
+          destination = [parseFloat(daddrMatch[1]), parseFloat(daddrMatch[2])];
+        } else {
+          // Try geocoding the address
+          const geocoded = await geocodeTextAddress(daddr);
+          if (geocoded) {
+            destination = geocoded;
+          }
+        }
+      }
+
+      if (destination) {
+        return res.json({
+          success: true,
+          origin: origin,
+          destination: destination,
+          resolvedUrl: normalizedUrl
+        });
+      }
+    }
+  } catch (err) {
+    console.error('[Parser] Lỗi xử lý saddr/daddr:', err.message);
+  }
+
   if (!initialExtracted.error && initialExtracted.destination) {
     return res.json({
       success: true,
       origin: initialExtracted.origin,
       destination: initialExtracted.destination,
-      resolvedUrl: url
+      resolvedUrl: normalizedUrl
     });
   }
 
@@ -353,7 +406,7 @@ router.post('/parse-google-maps-link', async (req, res) => {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
 
     let response;
     let fetchError = null;
@@ -364,8 +417,9 @@ router.post('/parse-google-maps-link', async (req, res) => {
       try {
         const axiosResponse = await axios.get(normalizedUrl, {
           maxRedirects: 10,
-          timeout: 15000,
+          timeout: 20000,
           signal: controller.signal,
+          validateStatus: (status) => status < 500,
           headers: {
             'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -381,8 +435,9 @@ router.post('/parse-google-maps-link', async (req, res) => {
         break;
       } catch (err) {
         fetchError = err;
+        console.error(`[Parser] Lỗi fetch attempt ${attempt + 1}:`, err.message);
         if (attempt < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 1500));
         }
       }
     }
@@ -531,16 +586,17 @@ router.post('/parse-google-maps-link', async (req, res) => {
         })
         .map(c => (c[0] < c[1] ? c : [c[1], c[0]])); // Chuẩn hóa [lat, lng]
 
-      if (rawMatches.length > 0) {
-        console.log(`[Parser] Quét HTML thấy ${rawMatches.length} tọa độ phù hợp.`);
-        if (isFinalPlaceOnlyUrl) {
-          if (!extracted.destination) extracted.destination = rawMatches[rawMatches.length - 1];
-          extracted.origin = null;
-        } else {
-          if (!extracted.origin) extracted.origin = rawMatches[0];
-          if (!extracted.destination) extracted.destination = rawMatches[rawMatches.length - 1];
+        if (rawMatches.length > 0) {
+          console.log(`[Parser] Quét HTML thấy ${rawMatches.length} tọa độ phù hợp.`);
+          if (isFinalPlaceOnlyUrl) {
+            if (!extracted.destination) extracted.destination = rawMatches[rawMatches.length - 1];
+            extracted.origin = null;
+          } else {
+            if (!extracted.origin) extracted.origin = rawMatches[0];
+            if (!extracted.destination) extracted.destination = rawMatches[rawMatches.length - 1];
+          }
+          delete extracted.error;
         }
-        delete extracted.error;
       }
     }
 
@@ -581,6 +637,7 @@ router.post('/parse-google-maps-link', async (req, res) => {
   } catch (err) {
     console.error('[Parser] Lỗi nghiêm trọng:', err);
 
+    // Try to extract from URL parameters as fallback
     const fallbackExtracted = normalizeCoordinateResult(extractCoordinates(normalizedUrl));
     if (!fallbackExtracted.error && fallbackExtracted.destination) {
       return res.json({
@@ -592,9 +649,41 @@ router.post('/parse-google-maps-link', async (req, res) => {
       });
     }
 
+    // Last resort: try geocoding saddr/daddr if present
+    try {
+      const parsedUrl = new URL(normalizedUrl);
+      const daddr = parsedUrl.searchParams.get('daddr');
+      if (daddr) {
+        const geocoded = await geocodeTextAddress(daddr);
+        if (geocoded) {
+          const saddr = parsedUrl.searchParams.get('saddr');
+          let origin = null;
+          if (saddr) {
+            const saddrMatch = saddr.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
+            if (saddrMatch) {
+              origin = [parseFloat(saddrMatch[1]), parseFloat(saddrMatch[2])];
+            }
+          }
+          return res.json({
+            success: true,
+            origin: origin,
+            destination: geocoded,
+            resolvedUrl: normalizedUrl,
+            warning: 'Đã geocode địa chỉ do không thể truy cập Google Maps.'
+          });
+        }
+      }
+    } catch (geocodeErr) {
+      console.error('[Parser] Lỗi geocode fallback:', geocodeErr.message);
+    }
+
+    const errorMessage = err.response?.status === 502
+      ? 'Lỗi 502: Google Maps tạm thời không phản hồi. Vui lòng thử lại sau ít phút.'
+      : 'Lỗi kết nối đến Google Maps.';
+
     return res.json({
       success: false,
-      message: 'Lỗi kết nối đến Google Maps.',
+      message: errorMessage,
       error: err.message
     });
   }
