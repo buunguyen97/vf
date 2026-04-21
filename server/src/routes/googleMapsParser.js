@@ -1,4 +1,5 @@
 const express = require('express');
+const axios = require('axios');
 const router = express.Router();
 
 function normalizeInputUrl(rawValue) {
@@ -125,13 +126,14 @@ async function geocodeGoogleMapsQuery(urlStr) {
     if (!q) return null;
 
     const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&countrycodes=vn&limit=1&accept-language=vi`;
-    const response = await fetch(geocodeUrl, {
-      headers: { 'User-Agent': 'VFRangeAssistant/1.0' }
+    const response = await axios.get(geocodeUrl, {
+      headers: { 'User-Agent': 'VFRangeAssistant/1.0' },
+      timeout: 10000
     });
 
-    if (!response.ok) return null;
+    if (response.status !== 200) return null;
 
-    const results = await response.json();
+    const results = response.data;
     const bestMatch = Array.isArray(results) ? results[0] : null;
     if (!bestMatch?.lat || !bestMatch?.lon) return null;
 
@@ -327,8 +329,9 @@ router.post('/parse-google-maps-link', async (req, res) => {
     const maxRetries = 2;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        response = await fetch(normalizedUrl, {
-          redirect: 'follow',
+        const axiosResponse = await axios.get(normalizedUrl, {
+          maxRedirects: 10,
+          timeout: 15000,
           signal: controller.signal,
           headers: {
             'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
@@ -337,6 +340,10 @@ router.post('/parse-google-maps-link', async (req, res) => {
             'Referer': 'https://www.google.com/'
           }
         });
+        response = {
+          url: axiosResponse.request.res.responseUrl || axiosResponse.config.url,
+          text: async () => axiosResponse.data
+        };
         fetchError = null;
         break;
       } catch (err) {
