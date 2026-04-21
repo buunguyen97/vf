@@ -98,6 +98,17 @@ function normalizeCoordinateResult(result) {
     normalized.origin = null;
   }
 
+  // If origin and destination are the same or very close (< 100m), treat as single location
+  if (normalized.origin && normalized.destination) {
+    const latDiff = Math.abs(normalized.origin[0] - normalized.destination[0]);
+    const lngDiff = Math.abs(normalized.origin[1] - normalized.destination[1]);
+    const distanceApprox = Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111000; // rough meters
+
+    if (distanceApprox < 100) {
+      normalized.origin = null;
+    }
+  }
+
   return normalized;
 }
 
@@ -126,6 +137,28 @@ async function geocodeGoogleMapsQuery(urlStr) {
     if (!q) return null;
 
     const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&countrycodes=vn&limit=1&accept-language=vi`;
+    const response = await axios.get(geocodeUrl, {
+      headers: { 'User-Agent': 'VFRangeAssistant/1.0' },
+      timeout: 10000
+    });
+
+    if (response.status !== 200) return null;
+
+    const results = response.data;
+    const bestMatch = Array.isArray(results) ? results[0] : null;
+    if (!bestMatch?.lat || !bestMatch?.lon) return null;
+
+    return [parseFloat(bestMatch.lat), parseFloat(bestMatch.lon)];
+  } catch {
+    return null;
+  }
+}
+
+async function geocodeTextAddress(address) {
+  if (!address || typeof address !== 'string' || address.trim().length === 0) return null;
+
+  try {
+    const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&countrycodes=vn&limit=1&accept-language=vi`;
     const response = await axios.get(geocodeUrl, {
       headers: { 'User-Agent': 'VFRangeAssistant/1.0' },
       timeout: 10000
@@ -383,6 +416,27 @@ router.post('/parse-google-maps-link', async (req, res) => {
 
     // Ưu tiên 1: Tách từ URL
     let extracted = normalizeCoordinateResult(extractCoordinates(finalUrl));
+
+    // If no coordinates found but has text addresses, try geocoding
+    if ((!extracted.origin || !extracted.destination) && isFinalRouteUrl) {
+      const parsedUrl = new URL(finalUrl);
+      const saddr = parsedUrl.searchParams.get('saddr');
+      const daddr = parsedUrl.searchParams.get('daddr');
+
+      if (saddr && !extracted.origin) {
+        const geocodedOrigin = await geocodeTextAddress(saddr);
+        if (geocodedOrigin) {
+          extracted.origin = geocodedOrigin;
+        }
+      }
+
+      if (daddr && !extracted.destination) {
+        const geocodedDestination = await geocodeTextAddress(daddr);
+        if (geocodedDestination) {
+          extracted.destination = geocodedDestination;
+        }
+      }
+    }
 
     if (preferredFinalPlaceDestination) {
       return res.json({
