@@ -179,9 +179,16 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
         </div>
 
         <div className="rounded-lg border border-[#1464F4]/16 bg-[#1464F4]/6 px-3 py-2 text-[11px] leading-5 text-white/68">
-          Mẹo nhanh: mở tuyến đường trên Google Maps, nhấn chia sẻ, sao chép link rồi quay lại đây{' '}
-          <span className="font-semibold text-white">chạm vào ô bên dưới</span> để dán link, sau đó bấm{' '}
-          <span className="font-semibold text-white">Phân tích</span>.
+          <span className="md:hidden">
+            Mẹo nhanh: mở tuyến đường trên Google Maps, nhấn chia sẻ, sao chép link rồi quay lại đây{' '}
+            <span className="font-semibold text-white">chạm vào ô bên dưới và dán</span>, sau đó bấm{' '}
+            <span className="font-semibold text-white">Phân tích</span>.
+          </span>
+          <span className="hidden md:inline">
+            Mẹo nhanh: mở tuyến đường trên Google Maps, nhấn chia sẻ, sao chép link rồi quay lại đây để{' '}
+            <span className="font-semibold text-white">Dán</span> và{' '}
+            <span className="font-semibold text-white">Phân tích</span>.
+          </span>
         </div>
         
         <div className="flex gap-2">
@@ -197,11 +204,11 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
           <button
             type="button"
             onClick={handlePaste}
-            className="bg-white/8 hover:bg-white/12 text-white px-3 py-2 rounded-lg text-sm font-bold flex items-center justify-center transition-colors shrink-0 border border-white/10"
+            className="hidden md:flex bg-white/8 hover:bg-white/12 text-white px-3 py-2 rounded-lg text-sm font-bold items-center justify-center transition-colors shrink-0 border border-white/10"
           >
             Dán
           </button>
-          <button 
+          <button
             onClick={handleParse}
             disabled={loading}
             className="bg-[#1464F4] hover:bg-[#0f4eb8] disabled:bg-gray-600 disabled:opacity-50 text-white px-3 py-2 rounded-lg text-sm font-bold flex items-center justify-center transition-colors shrink-0"
