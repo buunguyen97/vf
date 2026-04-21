@@ -98,7 +98,7 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
         setMessage('Đã lấy tọa độ thành công!');
         // Call the parent handler
         onOriginDestFound({
-          origin: result.destination ? result.origin : null,
+          origin: result.origin || null,
           destination: resolvedDestination,
         });
         // Clear input upon success after a short delay
