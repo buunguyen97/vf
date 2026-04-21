@@ -318,20 +318,40 @@ router.post('/parse-google-maps-link', async (req, res) => {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    // Sử dụng User-Agent của iPhone để Google trả về phiên bản Mobile linh hoạt hơn
-    const response = await fetch(normalizedUrl, {
-      redirect: 'follow',
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'vi-vn',
-        'Referer': 'https://www.google.com/'
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    let response;
+    let fetchError = null;
+
+    // Retry logic for shortened URLs (they're more prone to transient failures)
+    const maxRetries = 2;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        response = await fetch(normalizedUrl, {
+          redirect: 'follow',
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'vi-vn',
+            'Referer': 'https://www.google.com/'
+          }
+        });
+        fetchError = null;
+        break;
+      } catch (err) {
+        fetchError = err;
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
       }
-    });
+    }
+
     clearTimeout(timeoutId);
+
+    if (fetchError) {
+      throw fetchError;
+    }
 
     const finalUrl = response.url;
     console.log(`[Parser] URL sau redirect: ${finalUrl}`);
