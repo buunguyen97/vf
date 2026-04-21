@@ -493,8 +493,35 @@ router.post('/parse-google-maps-link', async (req, res) => {
       }
 
       // 2. Tìm bất kỳ chuỗi số nào giống tọa độ Việt Nam trong toàn bộ HTML
-      // Tìm dạng: 10.123456,106.123456 hoặc 10.123456, 106.123456
-      const rawMatches = [...html.matchAll(/(-?\d{1,2}\.\d{5,})\s*,\s*(-?\d{1,3}\.\d{5,})/g)]
+      // Format: [lng,lat] hoặc (lng,lat) hoặc lng,lat
+      const coordinatePairs = [];
+
+      // Find format: [106.710494,10.786648]
+      const bracketMatches = [...html.matchAll(/\[(-?\d+\.\d+),(-?\d+\.\d+)\]/g)];
+      for (const m of bracketMatches) {
+        const lng = parseFloat(m[1]);
+        const lat = parseFloat(m[2]);
+        // Check if valid Vietnam coordinates
+        if ((lat >= 8 && lat <= 24 && lng >= 102 && lng <= 110) ||
+            (lng >= 8 && lng <= 24 && lat >= 102 && lat <= 110)) {
+          // Normalize to [lat, lng]
+          const isVn1 = (lat >= 8 && lat <= 24) && (lng >= 102 && lng <= 110);
+          coordinatePairs.push(isVn1 ? [lat, lng] : [lng, lat]);
+        }
+      }
+
+      // If we found coordinate pairs, use them for origin/destination
+      if (coordinatePairs.length >= 2) {
+        extracted.origin = coordinatePairs[0];
+        extracted.destination = coordinatePairs[coordinatePairs.length - 1];
+        console.log(`[Parser] Found ${coordinatePairs.length} coordinate pairs from HTML`);
+      } else if (coordinatePairs.length === 1) {
+        extracted.destination = coordinatePairs[0];
+      }
+
+      // Fallback: Tìm dạng: 10.123456,106.123456 hoặc 10.123456, 106.123456
+      if (!extracted.origin || !extracted.destination) {
+        const rawMatches = [...html.matchAll(/(-?\d{1,2}\.\d{5,})\s*,\s*(-?\d{1,3}\.\d{5,})/g)]
         .map(m => [parseFloat(m[1]), parseFloat(m[2])])
         // Lọc tọa độ hợp lệ tại Việt Nam (Lat: 8-24, Lng: 102-110)
         .filter(c => {
