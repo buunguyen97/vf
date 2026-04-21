@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { CircleHelp } from 'lucide-react';
 import { evApi } from '../../services/api';
 import UsageGuideModal from '../help/UsageGuideModal';
@@ -55,6 +55,7 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
   const [guideOpen, setGuideOpen] = useState(false);
   const [manualPasteOpen, setManualPasteOpen] = useState(false);
   const [manualPasteValue, setManualPasteValue] = useState('');
+  const inputRef = useRef(null);
 
   const handleParse = async () => {
     const normalizedUrl = normalizeGoogleMapsInput(urlState);
@@ -129,10 +130,13 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
       setError('');
       setMessage('');
     } catch (err) {
-      setManualPasteValue(urlState);
-      setManualPasteOpen(true);
+      // Fallback: focus vào input để user có thể paste thủ công
+      if (inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.select();
+      }
       setError('');
-      setMessage('Thiết bị này đang chặn dán tự động. Bạn chỉ cần dán link vào ô hỗ trợ rồi bấm Xong.');
+      setMessage('Hãy chạm giữ vào ô nhập liệu và chọn Dán từ menu.');
     }
   };
 
@@ -175,14 +179,15 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
         </div>
 
         <div className="rounded-lg border border-[#1464F4]/16 bg-[#1464F4]/6 px-3 py-2 text-[11px] leading-5 text-white/68">
-          Mẹo nhanh: mở tuyến đường trên Google Maps, nhấn chia sẻ, sao chép link rồi quay lại đây để{' '}
-          <span className="font-semibold text-white">Dán</span> và{' '}
+          Mẹo nhanh: mở tuyến đường trên Google Maps, nhấn chia sẻ, sao chép link rồi quay lại đây{' '}
+          <span className="font-semibold text-white">chạm vào ô bên dưới</span> để dán link, sau đó bấm{' '}
           <span className="font-semibold text-white">Phân tích</span>.
         </div>
         
         <div className="flex gap-2">
-          <input 
-            type="text" 
+          <input
+            ref={inputRef}
+            type="text"
             value={urlState}
             onChange={(e) => setUrlState(e.target.value)}
             placeholder="https://maps.app.goo.gl/..."
@@ -238,14 +243,15 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
               Trình duyệt đang chặn dán tự động
             </h3>
             <p className="mt-2 text-xs leading-5 text-white/62">
-              Hãy chạm giữ trong ô bên dưới, chọn <span className="font-semibold text-white">Dán</span>, rồi bấm{' '}
+              Hãy <span className="font-semibold text-white">chạm giữ</span> trong ô bên dưới, chọn{' '}
+              <span className="font-semibold text-white">Dán</span> từ menu hiện ra, rồi bấm{' '}
               <span className="font-semibold text-white">Xong</span>.
             </p>
 
             <textarea
               value={manualPasteValue}
               onChange={(e) => setManualPasteValue(e.target.value)}
-              placeholder="Dán link Google Maps vào đây..."
+              placeholder="Chạm giữ ở đây rồi chọn Dán..."
               autoFocus
               rows={4}
               className="mt-3 w-full rounded-2xl border border-white/10 bg-black/45 px-3 py-3 text-sm text-white outline-none transition-colors focus:border-[#1464F4]"

@@ -14,6 +14,9 @@ function normalizeInputUrl(rawValue) {
     normalized = `https://${normalized}`;
   }
 
+  // Remove mobile app parameters that can cause issues
+  normalized = normalized.replace(/[?&]g_st=[^&]*/g, '');
+
   return normalized;
 }
 
