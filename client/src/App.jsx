@@ -146,9 +146,11 @@ function App() {
         setGeoResolved(true);
         fetchWeatherForLocation(origin[0], origin[1]);
       } else {
-        setUserLocation(null);
-        setGeoResolved(false);
-        acquireCurrentLocation();
+        // Single-point link: keep existing GPS location as origin,
+        // only acquire if we don't have one yet
+        if (!userLocation) {
+          acquireCurrentLocation();
+        }
       }
 
       setDestination(resolvedDestination);
