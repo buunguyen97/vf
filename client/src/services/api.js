@@ -93,6 +93,23 @@ const normalizeCoordinatePair = (coords) => {
   return [lat, lng];
 };
 
+// Downsample coordinate array to maxPoints while keeping first/last.
+// Server needs points roughly every ~500m for 1km-radius station search.
+// A 1700km route from OSRM has ~50k points → downsample to ~3000.
+function downsampleCoordinates(coordinates, maxPoints = 3000) {
+  if (!coordinates || coordinates.length <= maxPoints) return coordinates;
+
+  const result = [coordinates[0]]; // always keep start
+  const step = (coordinates.length - 1) / (maxPoints - 1);
+
+  for (let i = 1; i < maxPoints - 1; i++) {
+    result.push(coordinates[Math.round(i * step)]);
+  }
+
+  result.push(coordinates[coordinates.length - 1]); // always keep end
+  return result;
+}
+
 export const evApi = {
   getVehicles: async () => {
     const response = await axios.get(`${API_URL}/vehicles`);
@@ -125,15 +142,19 @@ export const evApi = {
     const rawRoutes = await fetchOSRMRoutes(origin, destination, waypoint);
 
     // Strip to only what server needs: distance + coordinates (reduced precision)
-    const routes = rawRoutes.map(r => ({
-      distance: r.distance,
-      geometry: {
-        coordinates: r.geometry.coordinates.map(c => [
-          Math.round(c[0] * 100000) / 100000,  // ~1m precision, saves bytes
-          Math.round(c[1] * 100000) / 100000,
-        ]),
-      },
-    }));
+    // Then downsample to avoid 413 Payload Too Large on long routes (e.g. SG→HN ~50k pts)
+    const routes = rawRoutes.map(r => {
+      const rounded = r.geometry.coordinates.map(c => [
+        Math.round(c[0] * 10000) / 10000,  // ~11m precision, sufficient for 1km station search
+        Math.round(c[1] * 10000) / 10000,
+      ]);
+      return {
+        distance: r.distance,
+        geometry: {
+          coordinates: downsampleCoordinates(rounded, 3000),
+        },
+      };
+    });
 
     // Send pre-fetched routes to server for station/battery analysis
     const response = await axios.post(`${API_URL}/optimal-route`, {

@@ -130,13 +130,18 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
       setError('');
       setMessage('');
     } catch (err) {
-      // Fallback: focus vào input để user có thể paste thủ công
-      if (inputRef.current) {
-        inputRef.current.focus();
-        inputRef.current.select();
-      }
+      // On mobile or when clipboard API fails, show manual paste dialog
+      setManualPasteOpen(true);
       setError('');
-      setMessage('Hãy chạm giữ vào ô nhập liệu và chọn Dán từ menu.');
+      setMessage('');
+    }
+  };
+
+  const handleInputFocus = () => {
+    // On mobile, when user focuses input, try to paste automatically
+    // If it fails, the error handler will show the manual paste dialog
+    if (window.innerWidth < 768 && !urlState) {
+      handlePaste();
     }
   };
 

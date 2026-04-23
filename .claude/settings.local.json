@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git merge *)",
+      "Bash(node -e ' *)",
+      "Bash(curl *)",
+      "Bash(node -c src/routes/googleMapsParser.js)",
+      "Bash(awk 'NR>=305 && NR<=360' /d/vinfast/server/src/routes/googleMapsParser.js)",
+      "Bash(npm run *)",
+      "Bash(python -m json.tool)",
+      "Bash(netstat -ano)",
+      "Bash(awk '{print $5}')",
+      "Bash(xargs -I {} taskkill //F //PID {})",
+      "Bash(node *)",
+      "Bash(git add *)"
+    ]
+  }
+}
