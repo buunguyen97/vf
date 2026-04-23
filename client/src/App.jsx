@@ -114,6 +114,7 @@ function App() {
           fetchWeatherForLocation(lat, lon);
         },
         () => console.log('Location fallback allowed.'),
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
       );
     }
   };
@@ -146,10 +147,28 @@ function App() {
         setGeoResolved(true);
         fetchWeatherForLocation(origin[0], origin[1]);
       } else {
-        // Single-point link: keep existing GPS location as origin,
-        // only acquire if we don't have one yet
+        // Single-point link: use current GPS as origin
         if (!userLocation) {
-          acquireCurrentLocation();
+          // Actively request GPS with timeout and error feedback
+          if ('geolocation' in navigator) {
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                setUserLocation([lat, lon]);
+                setGeoResolved(true);
+                fetchWeatherForLocation(lat, lon);
+              },
+              () => {
+                setRouteError(
+                  'Không thể lấy vị trí hiện tại. Vui lòng bật Định vị (GPS) trong Cài đặt trình duyệt, hoặc dán link Google Maps có cả điểm đi và điểm đến.',
+                );
+              },
+              { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
+            );
+          } else {
+            setRouteError('Trình duyệt không hỗ trợ định vị. Vui lòng dán link có cả điểm đi và điểm đến.');
+          }
         }
       }
 
