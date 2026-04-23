@@ -60,6 +60,7 @@ function App() {
   const [lastViewedStationId, setLastViewedStationId] = useState(null);
   const [reachability, setReachability] = useState(null);
   const [routeError, setRouteError] = useState('');
+  const [geoDenied, setGeoDenied] = useState(false);
 
   const [sheetOpen, setSheetOpen] = useState(true);
   const [locationName, setLocationName] = useState('');
@@ -111,9 +112,14 @@ function App() {
           const lon = position.coords.longitude;
           setUserLocation([lat, lon]);
           setGeoResolved(true);
+          setGeoDenied(false);
           fetchWeatherForLocation(lat, lon);
         },
-        () => console.log('Location fallback allowed.'),
+        (error) => {
+          if (error?.code === 1) {
+            setGeoDenied(true);
+          }
+        },
         { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
       );
     }
@@ -493,6 +499,26 @@ function App() {
 
   const plannerContent = (
     <div className="space-y-3">
+      {geoDenied && !userLocation && (
+        <div className="rounded-2xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-4 py-3 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
+          <p className="text-sm font-semibold text-[#F59E0B]">⚠️ Vị trí bị tắt</p>
+          <p className="mt-1 text-xs leading-5 text-white/70">
+            Trình duyệt đã chặn quyền vị trí. Để bật lại:
+          </p>
+          <ul className="mt-1.5 space-y-1 text-xs leading-5 text-white/60">
+            <li>• <span className="text-white/80">iPhone Safari:</span> nhấn <strong className="text-white">aA</strong> (góc trái URL) → Cài đặt trang web → Vị trí → Cho phép</li>
+            <li>• <span className="text-white/80">Android Chrome:</span> nhấn 🔒 (góc trái URL) → Quyền → Vị trí → Cho phép</li>
+          </ul>
+          <button
+            type="button"
+            onClick={() => { setGeoDenied(false); acquireCurrentLocation(); }}
+            className="mt-2.5 w-full rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/15 py-2 text-xs font-bold text-[#F59E0B] transition-colors hover:bg-[#F59E0B]/25"
+          >
+            🔄 Thử lại lấy vị trí
+          </button>
+        </div>
+      )}
+
       {routeError && (
         <div className="rounded-2xl border border-[#DA303E]/30 bg-[#DA303E]/10 px-4 py-3 text-sm text-red-200 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
           {routeError}
