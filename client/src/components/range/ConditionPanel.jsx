@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Settings2, Thermometer, Wind } from 'lucide-react';
+import { getConditionRangeLossPercent } from '../../utils/consumption';
 
 function EditableBadge({ value, unit, min, max, step, onChange, className = '' }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -63,35 +64,11 @@ function EditableBadge({ value, unit, min, max, step, onChange, className = '' }
   );
 }
 
-function softenFactor(factor = 1) {
-  return 1 + ((factor - 1) / 2);
-}
-
 export default function ConditionPanel({ conditions, setConditions, locationName }) {
   const speed = conditions.speed;
   const temp = conditions.temperature;
   const acOn = conditions.acOn;
-
-  let speedFactor = 1.0;
-  if (speed <= 70) speedFactor = 1.0;
-  else if (speed <= 80) speedFactor = 1.05;
-  else if (speed <= 90) speedFactor = 1.12;
-  else if (speed <= 100) speedFactor = 1.2;
-  else if (speed <= 110) speedFactor = 1.3;
-  else speedFactor = 1.4;
-
-  let tempFactor = 1.0;
-  if (temp >= 20 && temp <= 30) tempFactor = 1.0;
-  else if (temp >= 31 && temp <= 35) tempFactor = 1.05;
-  else if (temp > 35) tempFactor = 1.1;
-  else if (temp >= 10 && temp <= 19) tempFactor = 1.08;
-  else tempFactor = 1.15;
-
-  const softenedSpeedFactor = softenFactor(speedFactor);
-  const softenedTempFactor = softenFactor(tempFactor);
-  const acFactor = acOn ? 1.05 : 1.0;
-  const baseDegradation = ((softenedSpeedFactor * softenedTempFactor * acFactor) - 1) * 100 / 2.5;
-  const degradationPercent = Math.max(0, Number(baseDegradation.toFixed(1)));
+  const degradationPercent = getConditionRangeLossPercent({ speed, temperature: temp, acOn });
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#111111] p-3 shadow-lg md:p-3.5">
@@ -152,7 +129,7 @@ export default function ConditionPanel({ conditions, setConditions, locationName
         </div>
 
         <div className="flex items-center justify-between rounded-lg border border-white/5 bg-black/30 px-2.5 py-2 text-[11px] md:text-xs">
-          <span className="font-medium text-white/70">Trừ hao tổng pin</span>
+          <span className="font-medium text-white/70">Trừ hao km/1%</span>
           <span className={`font-mono font-bold ${degradationPercent > 0 ? 'text-[#DA303E]' : 'text-[#00B14F]'}`}>
             {degradationPercent}%
           </span>

@@ -1,11 +1,40 @@
 import { useState, useRef, useEffect } from 'react';
 import { Car, ChevronDown, Check } from 'lucide-react';
 
+const VEHICLE_ORDER = [
+  'VF3',
+  'VF5',
+  'VFe34',
+  'VF6_Eco',
+  'VF6',
+  'VF7_Eco',
+  'VF7',
+  'VF8_Eco',
+  'VF8_Plus',
+  'VF9_Eco',
+  'VF9_Plus',
+  'Minio_Green',
+  'Herio_Green',
+  'Nerio_Green',
+  'Limo_Green',
+  'EC_Van',
+];
+
+const getVehicleOrder = (vehicle) => {
+  const index = VEHICLE_ORDER.indexOf(vehicle.name);
+  return index === -1 ? VEHICLE_ORDER.length : index;
+};
+
 export default function VehicleSelector({ vehicles, selectedVehicleId, onSelect }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
   const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId);
+  const sortedVehicles = [...vehicles].sort((a, b) => {
+    const orderDiff = getVehicleOrder(a) - getVehicleOrder(b);
+    if (orderDiff !== 0) return orderDiff;
+    return (a.display_name || a.name || '').localeCompare(b.display_name || b.name || '', 'vi');
+  });
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -32,7 +61,7 @@ export default function VehicleSelector({ vehicles, selectedVehicleId, onSelect 
           {selectedVehicle ? (
             <div className="flex items-center gap-2 text-[13px] md:text-sm font-bold">
                <span className="text-[#1464F4] shrink-0"><Car className="w-4 h-4"/></span>
-               {selectedVehicle.name || selectedVehicle.model || 'VinFast Auto'}
+               {selectedVehicle.display_name || selectedVehicle.name || selectedVehicle.model || 'VinFast Auto'}
                <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded font-normal text-white/50 ml-1">
                  {selectedVehicle.battery_capacity_kwh}kWh
                </span>
@@ -46,7 +75,7 @@ export default function VehicleSelector({ vehicles, selectedVehicleId, onSelect 
         {/* Dropdown Menu */}
         {isOpen && (
           <div className="absolute top-[calc(100%+8px)] left-0 w-full bg-[#0A0A0A] border border-white/10 rounded-xl overflow-y-auto max-h-60 z-[100] shadow-[0_20px_50px_rgba(0,0,0,0.5)] animate-in fade-in zoom-in-95 duration-200">
-            {vehicles.map(v => (
+            {sortedVehicles.map(v => (
               <button
                 key={v.id}
                 onClick={() => {
@@ -59,7 +88,7 @@ export default function VehicleSelector({ vehicles, selectedVehicleId, onSelect 
               >
                 <div>
                   <div className="font-bold text-sm text-white flex items-center gap-2">
-                    {v.name || v.model}
+                    {v.display_name || v.name || v.model}
                     {selectedVehicleId === v.id && <Check className="w-4 h-4 text-[#1464F4]" />}
                   </div>
                   <div className="text-[10px] md:text-[11px] text-white/40 mt-1 flex gap-3">

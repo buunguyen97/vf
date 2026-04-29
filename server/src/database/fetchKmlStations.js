@@ -1,5 +1,70 @@
-const fs = require('fs');
-const { getDb } = require('./init');
+const path = require('path');
+const { getDb, closeDb } = require('./init');
+
+function htmlToText(value) {
+  return String(value || '')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/p>/gi, ' ')
+    .replace(/<[^>]*>?/gm, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractTag(chunk, tagName) {
+  const pattern = new RegExp(
+    `<${tagName}>(?:<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>|([\\s\\S]*?))<\\/${tagName}>`,
+    'i',
+  );
+  const match = pattern.exec(chunk);
+  return match ? (match[1] || match[2] || '').trim() : '';
+}
+
+function parsePowerKw(text) {
+  const powerMatches = String(text || '').match(/(\d+)\s*[kK][wW]/g);
+  if (!powerMatches?.length) return 60;
+
+  const powerValues = powerMatches
+    .map((item) => Number((item.match(/(\d+)/) || [])[1]))
+    .filter(Number.isFinite);
+
+  return powerValues.length ? Math.max(...powerValues) : 60;
+}
+
+function parseKmlStations(kmlText) {
+  const placemarks = [];
+  const placemarkRegex = /<Placemark\b[^>]*>([\s\S]*?)<\/Placemark>/g;
+  let match;
+
+  while ((match = placemarkRegex.exec(kmlText)) !== null) {
+    const chunk = match[1];
+    const coordsMatch = /<coordinates>\s*([-\d.]+)\s*,\s*([-\d.]+)/.exec(chunk);
+    if (!coordsMatch) continue;
+
+    const longitude = Number(coordsMatch[1]);
+    const latitude = Number(coordsMatch[2]);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
+    if (latitude < 8 || latitude > 24 || longitude < 102 || longitude > 110) continue;
+
+    const rawName = extractTag(chunk, 'name') || 'Trạm sạc VinFast';
+    const rawDescription = extractTag(chunk, 'description');
+    const address = htmlToText(rawDescription || rawName).slice(0, 1500);
+
+    placemarks.push({
+      name: htmlToText(rawName),
+      address: address || 'Việt Nam',
+      latitude,
+      longitude,
+      power_kw: parsePowerKw(rawDescription),
+      city: 'Vietnam',
+    });
+  }
+
+  return placemarks;
+}
 
 async function importKmlStations() {
   const KML_URL = 'https://www.google.com/maps/d/kml?mid=1iIZ3L3KEKU0fg5XsIQ6hbRl7NVY8JNA&forcekml=1';
@@ -13,61 +78,8 @@ async function importKmlStations() {
   
   const kmlText = await response.text();
   console.log(`Received KML data, length: ${kmlText.length} characters`);
-  
-  // Very simplistic Regex matching for Placemarks
-  // We need <name>, <description> (optional), and <coordinates> (lon,lat)
-  const placemarks = [];
-  const placemarkRegex = /<Placemark>([\s\S]*?)<\/Placemark>/g;
-  let match;
-  
-  while ((match = placemarkRegex.exec(kmlText)) !== null) {
-    const chunk = match[1];
-    
-    // Extract name
-    const nameMatch = /<name><!\[CDATA\[(.*?)\]\]><\/name>|<name>(.*?)<\/name>/.exec(chunk);
-    const name = nameMatch ? (nameMatch[1] || nameMatch[2]) : "Trạm sạc VinFast";
-    
-    // Extract description (usually contains address)
-    const descMatch = /<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>|<description>([\s\S]*?)<\/description>/.exec(chunk);
-    let address = "Việt Nam";
-    if (descMatch) {
-      const rawDesc = descMatch[1] || descMatch[2] || "";
-      // Strip HTML tags from description if any
-      address = rawDesc.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
-      if (address.length > 200) {
-          address = address.substring(0, 200) + '...';
-      }
-    }
-    
-    // Extract coordinates
-    const coordsMatch = /<coordinates>\s*([-\d.]+)\s*,\s*([-\d.]+)/.exec(chunk);
-    if (coordsMatch) {
-      const longitude = parseFloat(coordsMatch[1]);
-      const latitude = parseFloat(coordsMatch[2]);
-      
-      // Try to parse power from description (e.g. "10 cổng 20KW 16 cổng 11KW")
-      let power_kw = 60; // default fallback
-      if (descMatch) {
-        const rawText = descMatch[1] || descMatch[2] || "";
-        // Find all power values like "20KW", "60kW", "150 kW"
-        const powerMatches = rawText.match(/(\d+)\s*[kK][wW]/g);
-        if (powerMatches && powerMatches.length > 0) {
-          // Extract the maximum power value
-          const powerValues = powerMatches.map(m => parseInt(m.match(/(\d+)/)[1]));
-          power_kw = Math.max(...powerValues);
-        }
-      }
 
-      placemarks.push({
-        name,
-        address,
-        latitude,
-        longitude,
-        power_kw,
-        city: 'Vietnam'
-      });
-    }
-  }
+  const placemarks = parseKmlStations(kmlText);
   
   console.log(`Successfully parsed ${placemarks.length} stations from KML.`);
   
@@ -77,9 +89,12 @@ async function importKmlStations() {
   }
   
   const db = getDb();
-  
-  // Clear old OSM stations
-  db.prepare('DELETE FROM charging_stations').run();
+  const backupPath = path.join(
+    __dirname,
+    `vinfast.backup-before-kml-${new Date().toISOString().replace(/[:.]/g, '-')}.db`,
+  );
+  await db.backup(backupPath);
+  console.log(`Database backup created: ${backupPath}`);
   
   const insertStation = db.prepare(`
     INSERT INTO charging_stations (name, address, latitude, longitude, power_kw, city)
@@ -88,6 +103,7 @@ async function importKmlStations() {
 
   let count = 0;
   const insertStationTransaction = db.transaction((items) => {
+    db.prepare('DELETE FROM charging_stations').run();
     for (const item of items) {
       insertStation.run(item);
       count++;
@@ -100,4 +116,7 @@ async function importKmlStations() {
 
 importKmlStations().catch(err => {
     console.error("Error running KML script:", err);
-}).finally(() => process.exit(0));
+}).finally(() => {
+    closeDb();
+    process.exit(0);
+});

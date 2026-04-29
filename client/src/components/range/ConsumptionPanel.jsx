@@ -81,8 +81,6 @@ export default function ConsumptionPanel({ conditions, setConditions, vehicles, 
   const rawKmPer1Percent = energyPer1Percent / currentConsumption;
   const kmPer1Percent = parseFloat(rawKmPer1Percent.toFixed(1));
 
-  // Default km per 1% from vehicle
-  const rawDefaultKmPer1Percent = energyPer1Percent / defaultConsumption;
   const defaultKmPer1Percent = getDefaultKmPer1Percent(selectedVehicle);
 
   // Min/max for slider

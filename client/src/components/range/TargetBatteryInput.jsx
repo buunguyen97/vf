@@ -73,7 +73,7 @@ export default function TargetBatteryInput({
         )}
       </div>
 
-      <div className="relative z-10 pb-1 pt-3">
+      <div className="relative z-10 pt-3">
         <input
           type="range"
           min="10"
@@ -86,11 +86,6 @@ export default function TargetBatteryInput({
             background: `linear-gradient(to right, #1464F4 0%, #1464F4 ${((targetBatteryPercent - 10) / 40) * 100}%, rgba(255,255,255,0.1) ${((targetBatteryPercent - 10) / 40) * 100}%, rgba(255,255,255,0.1) 100%)`,
           }}
         />
-        <div className="mt-1.5 flex justify-between text-[9px] font-bold uppercase tracking-widest text-white/40 md:text-[10px]">
-          <span>10%</span>
-          <span className="text-[#1464F4]">30%</span>
-          <span>50%</span>
-        </div>
       </div>
     </div>
   );

@@ -21,7 +21,7 @@ const guideSteps = [
     id: 3,
     title: 'Dán vào app rồi nhấn Phân tích',
     description:
-      'Quay lại app, nhấn Dán để đưa link vào ô Google Maps, sau đó bấm Phân tích.',
+      'Quay lại app, dán link vào ô Google Maps, sau đó bấm Phân tích.',
     image: '/guide/hd-2.jpg',
     icon: Copy,
   },

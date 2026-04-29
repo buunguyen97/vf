@@ -173,11 +173,15 @@ router.post('/optimal-route', async (req, res) => {
         .map(st => {
           const batteryNeeded = kmToBatteryPct(st.distanceFromStartKm);
           const batteryOnArrival = currentBattery - batteryNeeded;
+          const sweetSpotGap = batteryOnArrival < minBatteryPct
+            ? minBatteryPct - batteryOnArrival
+            : Math.max(0, batteryOnArrival - sweetSpotMax);
+
           return {
             ...st,
             batteryAtStation: Math.round(batteryOnArrival),
-            sweetSpotGap: Math.abs(batteryOnArrival - sweetSpotMax),
-            score: (Math.abs(batteryOnArrival - sweetSpotMax) * -10) + st.power_kw - (st.detourKm * 80),
+            sweetSpotGap,
+            score: (sweetSpotGap * -10) + st.power_kw - (st.detourKm * 80),
           };
         })
         .filter(st => st.batteryAtStation >= minBatteryPct)
@@ -197,7 +201,7 @@ router.post('/optimal-route', async (req, res) => {
           st.alternativeIndex = idx;
           optimalStations.push(st);
         });
-        chargingStops.push({ stopNumber: 1, stations: optimalStations });
+        chargingStops.push({ stopNumber: 1, stations: fallbackStations });
       }
     }
 

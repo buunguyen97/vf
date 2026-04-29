@@ -5,72 +5,128 @@ const vehicles = [
     name: 'VF3',
     display_name: 'VinFast VF 3',
     battery_capacity_kwh: 18.64,
-    base_consumption_wh_km: 90,       // ~9 kWh/100km (NEDC)
-    wltp_range_km: 210,               // NEDC 210km, real ~150-170km
+    base_consumption_wh_km: 89,
+    wltp_range_km: 210,
     image_url: '/assets/vehicles/vf3.png'
+  },
+  {
+    name: 'Minio_Green',
+    display_name: 'VinFast Minio Green',
+    battery_capacity_kwh: 18.3,
+    base_consumption_wh_km: 87,
+    wltp_range_km: 210,
+    image_url: '/assets/vehicles/minio-green.png'
+  },
+  {
+    name: 'EC_Van',
+    display_name: 'VinFast EC Van',
+    battery_capacity_kwh: 18.3,
+    base_consumption_wh_km: 105,
+    wltp_range_km: 175,
+    image_url: '/assets/vehicles/ec-van.png'
   },
   {
     name: 'VF5',
     display_name: 'VinFast VF 5 Plus',
     battery_capacity_kwh: 37.23,
-    base_consumption_wh_km: 113,      // ~11.34 kWh/100km (WLTP)
-    wltp_range_km: 326,               // NEDC 326km
+    base_consumption_wh_km: 114,
+    wltp_range_km: 326,
     image_url: '/assets/vehicles/vf5.png'
+  },
+  {
+    name: 'Herio_Green',
+    display_name: 'VinFast Herio Green',
+    battery_capacity_kwh: 37.23,
+    base_consumption_wh_km: 114,
+    wltp_range_km: 326,
+    image_url: '/assets/vehicles/herio-green.png'
   },
   {
     name: 'VFe34',
     display_name: 'VinFast VF e34',
     battery_capacity_kwh: 42,
-    base_consumption_wh_km: 132,      // ~42kWh / 318km
-    wltp_range_km: 318,               // NEDC 318km
+    base_consumption_wh_km: 132,
+    wltp_range_km: 318,
     image_url: '/assets/vehicles/vfe34.png'
   },
   {
-    name: 'VF6',
-    display_name: 'VinFast VF 6',
+    name: 'Nerio_Green',
+    display_name: 'VinFast Nerio Green',
+    battery_capacity_kwh: 42,
+    base_consumption_wh_km: 147,
+    wltp_range_km: 285,
+    image_url: '/assets/vehicles/nerio-green.png'
+  },
+  {
+    name: 'VF6_Eco',
+    display_name: 'VinFast VF 6 Eco',
     battery_capacity_kwh: 59.6,
-    base_consumption_wh_km: 154,      // ~15.4 kWh/100km, WLTP ~381km
-    wltp_range_km: 381,               // WLTP ~379-410km
+    base_consumption_wh_km: 124,
+    wltp_range_km: 480,
     image_url: '/assets/vehicles/vf6.png'
   },
   {
-    name: 'VF7',
-    display_name: 'VinFast VF 7',
-    battery_capacity_kwh: 75.3,       // 75.3 kWh (top trim)
-    base_consumption_wh_km: 168,      // ~16.8 kWh/100km
-    wltp_range_km: 450,               // WLTP ~431-450km
+    name: 'VF6',
+    display_name: 'VinFast VF 6 Plus',
+    battery_capacity_kwh: 59.6,
+    base_consumption_wh_km: 130,
+    wltp_range_km: 460,
+    image_url: '/assets/vehicles/vf6.png'
+  },
+  {
+    name: 'VF7_Eco',
+    display_name: 'VinFast VF 7 Eco',
+    battery_capacity_kwh: 59.6,
+    base_consumption_wh_km: 135,
+    wltp_range_km: 440,
     image_url: '/assets/vehicles/vf7.png'
+  },
+  {
+    name: 'VF7',
+    display_name: 'VinFast VF 7 Plus',
+    battery_capacity_kwh: 75.3,
+    base_consumption_wh_km: 175,
+    wltp_range_km: 431,
+    image_url: '/assets/vehicles/vf7.png'
+  },
+  {
+    name: 'Limo_Green',
+    display_name: 'VinFast Limo Green',
+    battery_capacity_kwh: 60.13,
+    base_consumption_wh_km: 134,
+    wltp_range_km: 450,
+    image_url: '/assets/vehicles/limo-green.png'
   },
   {
     name: 'VF8_Eco',
     display_name: 'VinFast VF 8 Eco',
     battery_capacity_kwh: 87.7,
-    base_consumption_wh_km: 186,      // ~18.6 kWh/100km (real-world efficient)
-    wltp_range_km: 471,               // WLTP 471km
+    base_consumption_wh_km: 186,
+    wltp_range_km: 471,
     image_url: '/assets/vehicles/vf8.png'
   },
   {
     name: 'VF8_Plus',
     display_name: 'VinFast VF 8 Plus',
     battery_capacity_kwh: 87.7,
-    base_consumption_wh_km: 192,      // ~19.2 kWh/100km (heavier trim)
-    wltp_range_km: 457,               // WLTP 457km
+    base_consumption_wh_km: 192,
+    wltp_range_km: 457,
     image_url: '/assets/vehicles/vf8.png'
   },
   {
     name: 'VF9_Eco',
     display_name: 'VinFast VF 9 Eco',
     battery_capacity_kwh: 123,
-    base_consumption_wh_km: 211,      // ~21.1 kWh/100km (WLTP)
-    wltp_range_km: 531,               // EPA 330mi ≈ 531km
+    base_consumption_wh_km: 211,
+    wltp_range_km: 531,
     image_url: '/assets/vehicles/vf9.png'
   },
   {
     name: 'VF9_Plus',
     display_name: 'VinFast VF 9 Plus',
     battery_capacity_kwh: 123,
-    base_consumption_wh_km: 237,      // ~23.7 kWh/100km (WLTP, heavier)
-    wltp_range_km: 468,               // EPA 291mi ≈ 468km
+    base_consumption_wh_km: 237,
+    wltp_range_km: 468,
     image_url: '/assets/vehicles/vf9.png'
   }
 ];

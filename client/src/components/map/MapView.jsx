@@ -239,6 +239,8 @@ function PreviewRouteFitter({ routeCoords, active }) {
 }
 
 function MapClickHandler({ setDestination, routeData, setWaypoint, interactionLocked }) {
+  const isTouchDevice = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+
   useMapEvents({
     dblclick(e) {
       if (interactionLocked) return;
@@ -247,6 +249,7 @@ function MapClickHandler({ setDestination, routeData, setWaypoint, interactionLo
       }
     },
     contextmenu(e) {
+      if (isTouchDevice) return;
       if (interactionLocked) return;
       if (routeData) {
         setWaypoint([e.latlng.lat, e.latlng.lng]);
@@ -509,6 +512,7 @@ export default function MapView({
   const [isLoadingAmbientStations, setIsLoadingAmbientStations] = useState(false);
   const [expandedAmenityStationId, setExpandedAmenityStationId] = useState(null);
   const lastFetchRef = useRef(null);
+  const routeChoiceTapRef = useRef({ index: null, at: 0 });
 
   useEffect(() => {
     if (routeData) {
@@ -559,8 +563,15 @@ export default function MapView({
     };
   }, [routeData, ambientStations]);
 
+  const routeChoices = useMemo(() => (
+    (routeData?.alternativeRoutes || [])
+      .slice()
+      .sort((a, b) => a.index - b.index)
+  ), [routeData]);
+  const selectedRouteIndex = routeData?.selectedRouteIndex ?? 0;
+  const hasAlternativeRoutes = routeChoices.length > 1;
   const showAmbientLoadingOverlay = !routeData && (hideHelpOverlay || isLoadingAmbientStations);
-  const showAlternativeRouteHint = !!destination && (!!routeData || !!waypoint);
+  const showRouteChoiceBar = !!destination && hasAlternativeRoutes && !selectedStation && !showAmbientLoadingOverlay;
 
   useEffect(() => {
     if (!selectedStation) {
@@ -604,7 +615,18 @@ export default function MapView({
   const handleAlternativeRouteSelect = (routeIndex, event) => {
     L.DomEvent.stopPropagation(event);
     if (selectedStation) return;
-    if (onRouteReplan) onRouteReplan(routeIndex);
+    if (onRouteReplan) onRouteReplan(routeIndex, { optimisticSwitch: true });
+  };
+
+  const handleRouteChoiceSelect = (routeIndex, event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (routeIndex === selectedRouteIndex || selectedStation) return;
+    const now = Date.now();
+    const lastTap = routeChoiceTapRef.current;
+    if (lastTap.index === routeIndex && now - lastTap.at < 600) return;
+    routeChoiceTapRef.current = { index: routeIndex, at: now };
+    if (onRouteReplan) onRouteReplan(routeIndex, { optimisticSwitch: true });
   };
 
   return (
@@ -630,10 +652,36 @@ export default function MapView({
         </div>
       )}
 
-      {geoResolved && showAlternativeRouteHint && !showAmbientLoadingOverlay && (
-        <div className="pointer-events-none absolute left-1/2 top-4 z-[1850] w-[min(330px,calc(100%-36px))] -translate-x-1/2">
-          <div className="rounded-full border border-white/10 bg-black/60 px-4 py-2 text-center text-[11px] font-medium tracking-[0.01em] text-white/78 shadow-[0_10px_28px_rgba(0,0,0,0.22)] backdrop-blur-md">
-            Nhấn giữ vào tuyến phụ để đổi tuyến
+      {geoResolved && showRouteChoiceBar && (
+        <div className="absolute left-1/2 top-4 z-[1850] w-[min(390px,calc(100%-28px))] -translate-x-1/2">
+          <div className="rounded-2xl border border-white/12 bg-black/72 p-2.5 text-white shadow-[0_12px_34px_rgba(0,0,0,0.28)] backdrop-blur-md">
+            <div className="mb-2 px-1 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-white/58">
+              Chọn tuyến đường
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {routeChoices.map((route) => {
+                const isActive = route.index === selectedRouteIndex;
+                return (
+                  <button
+                    key={route.index}
+                    type="button"
+                    onPointerDown={(event) => handleRouteChoiceSelect(route.index, event)}
+                    onClick={(event) => handleRouteChoiceSelect(route.index, event)}
+                    disabled={isActive}
+                    className={`rounded-xl border px-2.5 py-2 text-left transition-all active:scale-[0.98] ${
+                      isActive
+                        ? 'border-[#1464F4] bg-[#1464F4] text-white shadow-[0_8px_20px_rgba(20,100,244,0.35)]'
+                        : 'border-white/12 bg-white/8 text-white/78 hover:border-[#1464F4]/55 hover:bg-white/14'
+                    }`}
+                  >
+                    <span className="block text-[11px] font-bold">Tuyến {route.index + 1}</span>
+                    <span className="mt-0.5 block text-[10px] font-medium opacity-75">
+                      {Math.round(route.distanceKm)} km
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
@@ -720,8 +768,6 @@ export default function MapView({
               eventHandlers={{
                 click: (e) => handleAlternativeRouteSelect(altRoute.index, e),
                 dblclick: (e) => handleAlternativeRouteSelect(altRoute.index, e),
-                contextmenu: (e) => handleAlternativeRouteSelect(altRoute.index, e),
-                touchstart: (e) => handleAlternativeRouteSelect(altRoute.index, e),
               }}
             />
           );

@@ -60,7 +60,7 @@ function App() {
   const [lastViewedStationId, setLastViewedStationId] = useState(null);
   const [reachability, setReachability] = useState(null);
   const [routeError, setRouteError] = useState('');
-  const [geoDenied, setGeoDenied] = useState(false);
+  const [, setGeoDenied] = useState(false);
 
   const [sheetOpen, setSheetOpen] = useState(true);
   const [locationName, setLocationName] = useState('');
@@ -71,6 +71,7 @@ function App() {
   const [routeHistoryState, setRouteHistoryState] = useState({ entries: [], index: -1 });
   const isRestoringRouteRef = useRef(false);
   const nearbySuggestionStartedAtRef = useRef(0);
+  const routeRequestIdRef = useRef(0);
   const sheetDragStateRef = useRef({
     active: false,
     startY: 0,
@@ -279,8 +280,15 @@ function App() {
   const calculateRouteAndStations = (routeIndex = 0, options = {}) => {
     if (!destination || !userLocation || !selectedVehicleId) return;
 
+    const requestId = routeRequestIdRef.current + 1;
+    routeRequestIdRef.current = requestId;
+    const currentRouteData = routeData;
     const nextWaypoint = options.waypointOverride ?? waypoint;
     const nextOldRoutePolyline = options.previousPolyline ?? oldRoutePolyline;
+    const reusableRoutes = options.optimisticSwitch && currentRouteData?.alternativeRoutes?.length
+      ? currentRouteData.alternativeRoutes
+      : null;
+    const optimisticRoute = reusableRoutes?.find((route) => route.index === routeIndex);
 
     setIsRouting(true);
     setSelectedStation(null);
@@ -288,6 +296,20 @@ function App() {
     setRouteError('');
     if (options.previousPolyline !== undefined) {
       setOldRoutePolyline(nextOldRoutePolyline);
+    }
+    if (optimisticRoute?.polylineCoords?.length) {
+      setRouteData({
+        ...currentRouteData,
+        selectedRouteIndex: routeIndex,
+        totalDistanceKm: Math.round(optimisticRoute.distanceKm || currentRouteData.totalDistanceKm || 0),
+        polylineCoords: optimisticRoute.polylineCoords,
+        allRouteStations: [],
+        optimalStations: [],
+        chargingStops: [],
+        insufficientBattery: false,
+        emergencyStation: null,
+      });
+      setSheetOpen(false);
     }
 
     evApi
@@ -301,8 +323,10 @@ function App() {
         vehicleName: selectedVehicle?.name,
         conditions,
         routeIndex,
+        prefetchedRoutes: reusableRoutes || undefined,
       })
       .then((data) => {
+        if (requestId !== routeRequestIdRef.current) return;
         if (!data?.polylineCoords?.length) {
           throw new Error('Không nhận được dữ liệu tuyến đường từ máy chủ.');
         }
@@ -316,11 +340,16 @@ function App() {
         });
       })
       .catch((error) => {
+        if (requestId !== routeRequestIdRef.current) return;
         console.error(error);
         setRouteError(getApiErrorMessage(error));
         setSheetOpen(true);
       })
-      .finally(() => setIsRouting(false));
+      .finally(() => {
+        if (requestId === routeRequestIdRef.current) {
+          setIsRouting(false);
+        }
+      });
   };
 
   const handleSuggestStations = () => {
@@ -499,26 +528,6 @@ function App() {
 
   const plannerContent = (
     <div className="space-y-3">
-      {geoDenied && !userLocation && (
-        <div className="rounded-2xl border border-[#F59E0B]/30 bg-[#F59E0B]/10 px-4 py-3 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
-          <p className="text-sm font-semibold text-[#F59E0B]">⚠️ Vị trí bị tắt</p>
-          <p className="mt-1 text-xs leading-5 text-white/70">
-            Trình duyệt đã chặn quyền vị trí. Để bật lại:
-          </p>
-          <ul className="mt-1.5 space-y-1 text-xs leading-5 text-white/60">
-            <li>• <span className="text-white/80">iPhone Safari:</span> nhấn <strong className="text-white">aA</strong> (góc trái URL) → Cài đặt trang web → Vị trí → Cho phép</li>
-            <li>• <span className="text-white/80">Android Chrome:</span> nhấn 🔒 (góc trái URL) → Quyền → Vị trí → Cho phép</li>
-          </ul>
-          <button
-            type="button"
-            onClick={() => { setGeoDenied(false); acquireCurrentLocation(); }}
-            className="mt-2.5 w-full rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/15 py-2 text-xs font-bold text-[#F59E0B] transition-colors hover:bg-[#F59E0B]/25"
-          >
-            🔄 Thử lại lấy vị trí
-          </button>
-        </div>
-      )}
-
       {routeError && (
         <div className="rounded-2xl border border-[#DA303E]/30 bg-[#DA303E]/10 px-4 py-3 text-sm text-red-200 shadow-[0_18px_40px_rgba(0,0,0,0.24)]">
           {routeError}
@@ -670,7 +679,8 @@ function App() {
                   setSelectedStation(null);
                   setReachability(null);
                 }}
-                onRouteReplan={(idx) => calculateRouteAndStations(idx, {
+                onRouteReplan={(idx, routeOptions = {}) => calculateRouteAndStations(idx, {
+                  ...routeOptions,
                   previousPolyline: routeData?.polylineCoords || oldRoutePolyline || null,
                 })}
                 onAmbientLoadingChange={setIsAmbientLoading}

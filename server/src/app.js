@@ -24,7 +24,30 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/vehicles', (req, res) => {
   const db = getDb();
-  const vehicles = db.prepare('SELECT * FROM vehicles').all();
+  const vehicles = db.prepare(`
+    SELECT *
+    FROM vehicles
+    ORDER BY CASE name
+      WHEN 'VF3' THEN 1
+      WHEN 'VF5' THEN 2
+      WHEN 'VFe34' THEN 3
+      WHEN 'VF6_Eco' THEN 4
+      WHEN 'VF6' THEN 5
+      WHEN 'VF7_Eco' THEN 6
+      WHEN 'VF7' THEN 7
+      WHEN 'VF8_Eco' THEN 8
+      WHEN 'VF8_Plus' THEN 9
+      WHEN 'VF9_Eco' THEN 10
+      WHEN 'VF9_Plus' THEN 11
+      WHEN 'Minio_Green' THEN 12
+      WHEN 'Herio_Green' THEN 13
+      WHEN 'Nerio_Green' THEN 14
+      WHEN 'Limo_Green' THEN 15
+      WHEN 'EC_Van' THEN 16
+      ELSE 99
+    END,
+    display_name COLLATE NOCASE
+  `).all();
   res.json(vehicles);
 });
 

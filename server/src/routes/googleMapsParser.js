@@ -115,19 +115,174 @@ function normalizeCoordinateResult(result) {
   return normalized;
 }
 
+function isValidCoordinatePair(lat, lng) {
+  return Number.isFinite(lat)
+    && Number.isFinite(lng)
+    && lat >= -90
+    && lat <= 90
+    && lng >= -180
+    && lng <= 180;
+}
+
+function isValidVietnamCoordinatePair(lat, lng) {
+  return isValidCoordinatePair(lat, lng)
+    && lat >= 8
+    && lat <= 24
+    && lng >= 102
+    && lng <= 110;
+}
+
+function toValidCoordinatePair(lat, lng, { preferVietnam = false } = {}) {
+  if (!isValidCoordinatePair(lat, lng)) return null;
+  if (preferVietnam && !isValidVietnamCoordinatePair(lat, lng)) return null;
+  return [lat, lng];
+}
+
+function decodeHtmlAttribute(value) {
+  return `${value || ''}`
+    .replace(/&amp;/g, '&')
+    .replace(/\\u003d/g, '=')
+    .replace(/\\u0026/g, '&')
+    .replace(/\\u003c/g, '<')
+    .replace(/\\u003e/g, '>');
+}
+
+function extractPreviewPlaceUrl(html, baseUrl) {
+  const previewMatches = [
+    html.match(/<link[^>]+href="([^"]*\/maps\/preview\/place[^"]+)"/i),
+    html.match(/(\/maps\/preview\/place\?[^"'<>\s]+)/i),
+    html.match(/(https?:\/\/www\.google\.[^"'<>\s]+\/maps\/preview\/place\?[^"'<>\s]+)/i),
+  ];
+
+  const match = previewMatches.find(Boolean);
+  if (!match) return null;
+
+  try {
+    return new URL(decodeHtmlAttribute(match[1]), baseUrl).href;
+  } catch {
+    return null;
+  }
+}
+
+function extractPreviewDirectionsCoordinates(html) {
+  const previewMatches = [
+    ...html.matchAll(/<link[^>]+href="([^"]*\/maps\/preview\/directions[^"]+)"/gi),
+    ...html.matchAll(/(\/maps\/preview\/directions\?[^"'<>\s]+)/gi),
+    ...html.matchAll(/(https?:\/\/www\.google\.[^"'<>\s]+\/maps\/preview\/directions\?[^"'<>\s]+)/gi),
+  ];
+
+  for (const match of previewMatches) {
+    const decodedAttribute = decodeHtmlAttribute(match[1]);
+    let decodedUrl = decodedAttribute;
+
+    try {
+      decodedUrl = decodeURIComponent(decodedAttribute);
+    } catch {
+      // Keep the attribute as-is if Google changes the escaping format.
+    }
+
+    const pairs = [...decodedUrl.matchAll(/!3m2!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/g)]
+      .map((coordMatch) => toValidCoordinatePair(parseFloat(coordMatch[1]), parseFloat(coordMatch[2]), { preferVietnam: true }))
+      .filter(Boolean);
+
+    if (pairs.length >= 2) {
+      return {
+        origin: pairs[0],
+        destination: pairs[pairs.length - 1],
+      };
+    }
+
+    if (pairs.length === 1) {
+      return {
+        origin: null,
+        destination: pairs[0],
+      };
+    }
+  }
+
+  return null;
+}
+
+function findPreviewPlaceCoordinate(value, depth = 0) {
+  if (!Array.isArray(value) || depth > 12) return null;
+
+  if (
+    value.length >= 3 &&
+    typeof value[0] === 'number' &&
+    typeof value[1] === 'number' &&
+    typeof value[2] === 'number'
+  ) {
+    const pair = toValidCoordinatePair(value[2], value[1], { preferVietnam: true });
+    if (pair) return pair;
+  }
+
+  for (const child of value) {
+    const found = findPreviewPlaceCoordinate(child, depth + 1);
+    if (found) return found;
+  }
+
+  return null;
+}
+
+function extractPreviewPlaceCoordinate(previewText) {
+  const cleanedText = `${previewText || ''}`.replace(/^\)\]\}'\s*/, '').trim();
+
+  try {
+    const parsed = JSON.parse(cleanedText);
+    const parsedCoordinate = findPreviewPlaceCoordinate(parsed);
+    if (parsedCoordinate) return parsedCoordinate;
+  } catch {
+    // Some Google responses are JSON-like payloads with an XSSI prefix.
+  }
+
+  const coordinateTriples = [...cleanedText.matchAll(/\[\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*\]/g)];
+  for (const match of coordinateTriples) {
+    const pair = toValidCoordinatePair(parseFloat(match[3]), parseFloat(match[2]), { preferVietnam: true });
+    if (pair) return pair;
+  }
+
+  return null;
+}
+
+async function resolvePreviewPlaceDestination(html, baseUrl) {
+  const previewUrl = extractPreviewPlaceUrl(html, baseUrl);
+  if (!previewUrl) return null;
+
+  try {
+    const response = await axios.get(previewUrl, {
+      maxRedirects: 10,
+      timeout: 20000,
+      validateStatus: (status) => status < 500,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'vi-vn',
+        'Referer': 'https://www.google.com/'
+      }
+    });
+
+    if (response.status !== 200) return null;
+
+    return extractPreviewPlaceCoordinate(response.data);
+  } catch (err) {
+    console.error('[Parser] Lỗi resolve preview/place:', err.message);
+    return null;
+  }
+}
+
 function extractPreferredPlaceDestination(urlStr) {
   if (!urlStr) return null;
 
   const exactMatches = [...urlStr.matchAll(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/g)];
   if (exactMatches.length > 0) {
     const last = exactMatches[exactMatches.length - 1];
-    return [parseFloat(last[1]), parseFloat(last[2])];
+    return toValidCoordinatePair(parseFloat(last[1]), parseFloat(last[2]), { preferVietnam: true });
   }
 
   const fallbackMatches = [...urlStr.matchAll(/!1d(-?\d+\.\d+)!2d(-?\d+\.\d+)/g)];
   if (fallbackMatches.length > 0) {
     const last = fallbackMatches[fallbackMatches.length - 1];
-    return [parseFloat(last[2]), parseFloat(last[1])];
+    return toValidCoordinatePair(parseFloat(last[2]), parseFloat(last[1]), { preferVietnam: true });
   }
 
   return null;
@@ -156,6 +311,27 @@ async function geocodeGoogleMapsQuery(urlStr) {
   } catch (err) {
     console.error('[Geocode] Lỗi geocode query:', err.message);
     return null;
+  }
+}
+
+function hasFtidQuery(urlStr) {
+  try {
+    const parsed = new URL(urlStr);
+    return parsed.searchParams.has('ftid');
+  } catch {
+    return false;
+  }
+}
+
+function hasCoordinateLikeQuery(urlStr) {
+  try {
+    const parsed = new URL(urlStr);
+    const q = `${parsed.searchParams.get('q') || ''}`.trim();
+    if (!q) return false;
+
+    return /-?\d+\.\d+\s*,\s*-?\d+\.\d+/.test(q);
+  } catch {
+    return false;
   }
 }
 
@@ -221,11 +397,11 @@ function extractCoordinates(urlStr) {
        // pathParts[2] is origin, pathParts[3] is destination
        if (pathParts[2]) {
            const match = pathParts[2].match(coordRegex);
-           if (match) origin = [parseFloat(match[1]), parseFloat(match[2])];
+           if (match) origin = toValidCoordinatePair(parseFloat(match[1]), parseFloat(match[2]), { preferVietnam: true });
        }
        if (pathParts[3]) {
            const match = pathParts[3].match(coordRegex);
-           if (match) destination = [parseFloat(match[1]), parseFloat(match[2])];
+           if (match) destination = toValidCoordinatePair(parseFloat(match[1]), parseFloat(match[2]), { preferVietnam: true });
        }
     }
 
@@ -233,38 +409,43 @@ function extractCoordinates(urlStr) {
     const qParam = parsedUrl.searchParams.get('q');
     if (qParam && !destination) {
       const qMatch = qParam.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
-      if (qMatch) destination = [parseFloat(qMatch[1]), parseFloat(qMatch[2])];
+      if (qMatch) destination = toValidCoordinatePair(parseFloat(qMatch[1]), parseFloat(qMatch[2]), { preferVietnam: true });
     }
     const saddr = parsedUrl.searchParams.get('saddr');
     if (saddr && !origin) {
       const saddrMatch = saddr.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
-      if (saddrMatch) origin = [parseFloat(saddrMatch[1]), parseFloat(saddrMatch[2])];
+      if (saddrMatch) origin = toValidCoordinatePair(parseFloat(saddrMatch[1]), parseFloat(saddrMatch[2]), { preferVietnam: true });
     }
     const daddr = parsedUrl.searchParams.get('daddr');
     if (daddr && !destination) {
       const daddrMatch = daddr.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
-      if (daddrMatch) destination = [parseFloat(daddrMatch[1]), parseFloat(daddrMatch[2])];
+      if (daddrMatch) destination = toValidCoordinatePair(parseFloat(daddrMatch[1]), parseFloat(daddrMatch[2]), { preferVietnam: true });
     }
     const destParam = parsedUrl.searchParams.get('destination');
     if (destParam && !destination) {
       const destMatch = destParam.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
-      if (destMatch) destination = [parseFloat(destMatch[1]), parseFloat(destMatch[2])];
+      if (destMatch) destination = toValidCoordinatePair(parseFloat(destMatch[1]), parseFloat(destMatch[2]), { preferVietnam: true });
     }
     const originParam = parsedUrl.searchParams.get('origin');
     if (originParam && !origin) {
       const originMatch = originParam.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
-      if (originMatch) origin = [parseFloat(originMatch[1]), parseFloat(originMatch[2])];
+      if (originMatch) origin = toValidCoordinatePair(parseFloat(originMatch[1]), parseFloat(originMatch[2]), { preferVietnam: true });
     }
 
     // Try extracted place via !1d !2d or !3d !4d variables in URL string
     if (!destination || !origin) {
         // Collect all !1d !2d matches
         const dMatches = [...urlStr.matchAll(/!1d(-?\d+\.\d+)!2d(-?\d+\.\d+)/g)];
-        const extractedCoords = dMatches.map(m => [parseFloat(m[2]), parseFloat(m[1])]); // 1d is lon, 2d is lat
+        const extractedCoords = dMatches
+          .map(m => toValidCoordinatePair(parseFloat(m[2]), parseFloat(m[1]), { preferVietnam: true }))
+          .filter(Boolean); // 1d is lon, 2d is lat
 
         // Also fallback to !3d (lat) !4d (lon)
         const d34Matches = [...urlStr.matchAll(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/g)];
-        d34Matches.forEach(m => extractedCoords.push([parseFloat(m[1]), parseFloat(m[2])]));
+        d34Matches.forEach(m => {
+          const pair = toValidCoordinatePair(parseFloat(m[1]), parseFloat(m[2]), { preferVietnam: true });
+          if (pair) extractedCoords.push(pair);
+        });
 
         if (extractedCoords.length >= 2 && !isPlaceOnlyUrl) {
             if (!origin) origin = extractedCoords[0];
@@ -282,11 +463,8 @@ function extractCoordinates(urlStr) {
     if (!destination && !origin) {
         const atMatch = urlStr.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
         if (atMatch) {
-             if (isPlaceOnlyUrl) {
-               destination = [parseFloat(atMatch[1]), parseFloat(atMatch[2])];
-             } else {
-               destination = [parseFloat(atMatch[1]), parseFloat(atMatch[2])];
-             }
+             const pair = toValidCoordinatePair(parseFloat(atMatch[1]), parseFloat(atMatch[2]), { preferVietnam: true });
+             if (pair) destination = pair;
         }
     }
     
@@ -294,7 +472,7 @@ function extractCoordinates(urlStr) {
     if (!destination && !origin) {
         const pathMatch = parsedUrl.pathname.match(/\/(-?\d+\.\d+),(-?\d+\.\d+)/);
         if (pathMatch) {
-            destination = [parseFloat(pathMatch[1]), parseFloat(pathMatch[2])];
+            destination = toValidCoordinatePair(parseFloat(pathMatch[1]), parseFloat(pathMatch[2]), { preferVietnam: true });
         }
     }
 
@@ -389,7 +567,7 @@ router.post('/parse-google-maps-link', async (req, res) => {
       ? (extractPreferredPlaceDestination(normalizedUrl) || directExtracted.destination)
       : null;
 
-    if (isQueryPlaceUrl) {
+    if (isQueryPlaceUrl && hasCoordinateLikeQuery(normalizedUrl)) {
       const geocodedDestination = await geocodeGoogleMapsQuery(normalizedUrl);
       if (geocodedDestination) {
         return res.json({
@@ -444,7 +622,7 @@ router.post('/parse-google-maps-link', async (req, res) => {
           signal: controller.signal,
           validateStatus: (status) => status < 500,
           headers: {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'vi-vn',
             'Referer': 'https://www.google.com/'
@@ -479,6 +657,13 @@ router.post('/parse-google-maps-link', async (req, res) => {
     const preferredFinalPlaceDestination = isFinalPlaceOnlyUrl
       ? extractPreferredPlaceDestination(finalUrl)
       : null;
+    let finalHtml = null;
+    const getFinalHtml = async () => {
+      if (finalHtml === null) {
+        finalHtml = await response.text();
+      }
+      return finalHtml;
+    };
 
     // Try to extract from saddr/daddr parameters in final URL first
     let extractedOrigin = null;
@@ -494,7 +679,7 @@ router.post('/parse-google-maps-link', async (req, res) => {
         if (saddr) {
           const saddrMatch = saddr.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
           if (saddrMatch) {
-            extractedOrigin = [parseFloat(saddrMatch[1]), parseFloat(saddrMatch[2])];
+            extractedOrigin = toValidCoordinatePair(parseFloat(saddrMatch[1]), parseFloat(saddrMatch[2]), { preferVietnam: true });
           }
         }
 
@@ -502,12 +687,26 @@ router.post('/parse-google-maps-link', async (req, res) => {
         if (daddr) {
           const daddrMatch = daddr.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
           if (daddrMatch) {
-            extractedDestination = [parseFloat(daddrMatch[1]), parseFloat(daddrMatch[2])];
+            extractedDestination = toValidCoordinatePair(parseFloat(daddrMatch[1]), parseFloat(daddrMatch[2]), { preferVietnam: true });
           } else {
-            // Try geocoding the address
-            const geocoded = await geocodeTextAddress(daddr);
-            if (geocoded) {
-              extractedDestination = geocoded;
+            const shouldReadDirectionsPreview = parsedUrl.searchParams.has('geocode') || parsedUrl.searchParams.has('ftid');
+            const previewDirections = shouldReadDirectionsPreview
+              ? extractPreviewDirectionsCoordinates(await getFinalHtml())
+              : null;
+
+            if (previewDirections?.origin && !extractedOrigin) {
+              extractedOrigin = previewDirections.origin;
+            }
+            if (previewDirections?.destination) {
+              extractedDestination = previewDirections.destination;
+            }
+
+            if (!extractedDestination) {
+              // Fall back to geocoding only after checking Google's richer directions payload.
+              const geocoded = await geocodeTextAddress(daddr);
+              if (geocoded) {
+                extractedDestination = geocoded;
+              }
             }
           }
         }
@@ -529,7 +728,7 @@ router.post('/parse-google-maps-link', async (req, res) => {
       console.error('[Parser] Lỗi xử lý saddr/daddr từ finalUrl:', err.message);
     }
 
-    if (isFinalQueryPlaceUrl) {
+    if (isFinalQueryPlaceUrl && hasCoordinateLikeQuery(finalUrl)) {
       const geocodedDestination = await geocodeGoogleMapsQuery(finalUrl);
       if (geocodedDestination) {
         return res.json({
@@ -602,11 +801,12 @@ router.post('/parse-google-maps-link', async (req, res) => {
     }
 
     // Ưu tiên 2: Nếu URL không đủ, quét nội dung HTML bằng các kỹ thuật mạnh hơn
-    const html = await response.text();
+    const html = await getFinalHtml();
     let preferredPlaceDestination = null;
 
     if (extracted.error || !extracted.origin || !extracted.destination) {
       console.log('[Parser] Đang quét sâu nội dung HTML...');
+      const shouldAvoidBroadHtmlCoordinateScan = isFinalQueryPlaceUrl && hasFtidQuery(finalUrl);
 
       // Kiểm tra xem có bị dính trang "Robot check" của Google không
       if (html.includes('unusual traffic from your computer network') || html.includes('captcha')) {
@@ -614,6 +814,16 @@ router.post('/parse-google-maps-link', async (req, res) => {
         return res.json({
           success: false,
           message: 'Lỗi: Google Maps đang chặn máy chủ. Cách khắc phục: Hãy dán link "đầy đủ" từ trình duyệt thay vì dùng nút Chia sẻ trong App, hoặc dán tọa độ thủ công.'
+        });
+      }
+
+      const previewPlaceDestination = await resolvePreviewPlaceDestination(html, finalUrl);
+      if (previewPlaceDestination && !isFinalRouteUrl) {
+        return res.json({
+          success: true,
+          origin: null,
+          destination: previewPlaceDestination,
+          resolvedUrl: finalUrl
         });
       }
 
@@ -656,16 +866,16 @@ router.post('/parse-google-maps-link', async (req, res) => {
       }
 
       // If we found coordinate pairs, use them for origin/destination
-      if (coordinatePairs.length >= 2) {
+      if (!shouldAvoidBroadHtmlCoordinateScan && coordinatePairs.length >= 2) {
         extracted.origin = coordinatePairs[0];
         extracted.destination = coordinatePairs[coordinatePairs.length - 1];
         console.log(`[Parser] Found ${coordinatePairs.length} coordinate pairs from HTML`);
-      } else if (coordinatePairs.length === 1) {
+      } else if (!shouldAvoidBroadHtmlCoordinateScan && coordinatePairs.length === 1) {
         extracted.destination = coordinatePairs[0];
       }
 
       // Fallback: Tìm dạng: 10.123456,106.123456 hoặc 10.123456, 106.123456
-      if (!extracted.origin || !extracted.destination) {
+      if ((!extracted.origin || !extracted.destination) && !shouldAvoidBroadHtmlCoordinateScan) {
         const rawMatches = [...html.matchAll(/(-?\d{1,2}\.\d{5,})\s*,\s*(-?\d{1,3}\.\d{5,})/g)]
         .map(m => [parseFloat(m[1]), parseFloat(m[2])])
         // Lọc tọa độ hợp lệ tại Việt Nam (Lat: 8-24, Lng: 102-110)
@@ -698,6 +908,18 @@ router.post('/parse-google-maps-link', async (req, res) => {
     }
 
     extracted = normalizeCoordinateResult(extracted);
+
+    if (!extracted.destination && isFinalQueryPlaceUrl) {
+      const geocodedDestination = await geocodeGoogleMapsQuery(finalUrl);
+      if (geocodedDestination) {
+        return res.json({
+          success: true,
+          origin: extracted.origin || null,
+          destination: geocodedDestination,
+          resolvedUrl: finalUrl
+        });
+      }
+    }
 
     if (!extracted.destination) {
       if (fallbackExtracted?.destination) {

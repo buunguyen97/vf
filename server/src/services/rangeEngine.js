@@ -8,6 +8,28 @@ function softenFactor(factor = 1) {
   return 1 + ((factor - 1) / 2);
 }
 
+function getConditionRangeLossPercent({ speed = 60, temperature = 32, acOn = true } = {}) {
+  let speedFactor = 1.0;
+  if (speed <= 70) speedFactor = 1.0;
+  else if (speed <= 80) speedFactor = 1.05;
+  else if (speed <= 90) speedFactor = 1.12;
+  else if (speed <= 100) speedFactor = 1.2;
+  else if (speed <= 110) speedFactor = 1.3;
+  else speedFactor = 1.4;
+
+  let tempFactor = 1.0;
+  if (temperature >= 20 && temperature <= 30) tempFactor = 1.0;
+  else if (temperature >= 31 && temperature <= 35) tempFactor = 1.05;
+  else if (temperature > 35) tempFactor = 1.1;
+  else if (temperature >= 10 && temperature <= 19) tempFactor = 1.08;
+  else tempFactor = 1.15;
+
+  const acFactor = acOn ? 1.05 : 1.0;
+  const lossPercent = ((softenFactor(speedFactor) * softenFactor(tempFactor) * acFactor) - 1) * 100 / 2.5;
+
+  return Math.max(0, Number(lossPercent.toFixed(1)));
+}
+
 function estimateRange({
   batteryPercent,
   batteryCapacityKwh,
@@ -18,57 +40,9 @@ function estimateRange({
   acOn,
 }) {
   let consumption = consumptionOverride || baseConsumption;
-  let temperatureFactor = 1;
-  let speedFactor = 1;
-
-  if (acOn) {
-    if (temperature >= 40) {
-      temperatureFactor = 1.1;
-    } else if (temperature >= 35) {
-      temperatureFactor = 1.075;
-    } else if (temperature >= 30) {
-      temperatureFactor = 1.04;
-    } else if (temperature >= 25) {
-      temperatureFactor = 1.015;
-    } else if (temperature >= 15) {
-      temperatureFactor = 1.005;
-    } else if (temperature >= 5) {
-      temperatureFactor = 1.125;
-    } else if (temperature >= -5) {
-      temperatureFactor = 1.175;
-    } else {
-      temperatureFactor = 1.225;
-    }
-  } else if (temperature >= 40) {
-    temperatureFactor = 1.04;
-  } else if (temperature >= 35) {
-    temperatureFactor = 1.025;
-  } else if (temperature >= 15 && temperature <= 30) {
-    temperatureFactor = 1.0;
-  } else if (temperature >= 5) {
-    temperatureFactor = 1.05;
-  } else if (temperature >= -5) {
-    temperatureFactor = 1.1;
-  } else {
-    temperatureFactor = 1.15;
-  }
-
-  if (speed >= 120) {
-    speedFactor = 1.175;
-  } else if (speed >= 100) {
-    speedFactor = 1.11;
-  } else if (speed >= 80) {
-    speedFactor = 1.05;
-  } else if (speed >= 60) {
-    speedFactor = 1.0;
-  } else if (speed >= 40) {
-    speedFactor = 0.975;
-  } else {
-    speedFactor = 0.96;
-  }
-
-  consumption *= softenFactor(temperatureFactor);
-  consumption *= softenFactor(speedFactor);
+  const lossPercent = getConditionRangeLossPercent({ speed, temperature, acOn });
+  const kmPerPercentMultiplier = Math.max(0.1, 1 - (lossPercent / 100));
+  consumption /= kmPerPercentMultiplier;
 
   const availableEnergy = (batteryPercent / 100) * batteryCapacityKwh * 1000;
   const safeAvailableEnergy = availableEnergy * 0.9;
@@ -77,7 +51,8 @@ function estimateRange({
   return {
     estimatedRangeKm: Math.max(0, Math.round(estimatedRangeKm)),
     adjustedConsumptionWhKm: Math.round(consumption),
+    conditionRangeLossPercent: lossPercent,
   };
 }
 
-module.exports = { estimateRange };
+module.exports = { estimateRange, getConditionRangeLossPercent };

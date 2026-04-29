@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { CircleHelp } from 'lucide-react';
+import { useState } from 'react';
+import { CircleHelp, Map } from 'lucide-react';
 import { evApi } from '../../services/api';
 import UsageGuideModal from '../help/UsageGuideModal';
 
@@ -53,9 +53,6 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [guideOpen, setGuideOpen] = useState(false);
-  const [manualPasteOpen, setManualPasteOpen] = useState(false);
-  const [manualPasteValue, setManualPasteValue] = useState('');
-  const inputRef = useRef(null);
 
   const handleParse = async () => {
     const normalizedUrl = normalizeGoogleMapsInput(urlState);
@@ -114,49 +111,8 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
     }
   };
 
-  const handlePaste = async () => {
-    try {
-      if (!navigator.clipboard?.readText) {
-        throw new Error('clipboard_unavailable');
-      }
-
-      const text = await navigator.clipboard.readText();
-      if (!text?.trim()) {
-        setError('Clipboard đang trống.');
-        return;
-      }
-
-      setUrlState(normalizeGoogleMapsInput(text));
-      setError('');
-      setMessage('');
-    } catch (err) {
-      // On mobile or when clipboard API fails, show manual paste dialog
-      setManualPasteOpen(true);
-      setError('');
-      setMessage('');
-    }
-  };
-
-  const handleInputFocus = () => {
-    // On mobile, when user focuses input, try to paste automatically
-    // If it fails, the error handler will show the manual paste dialog
-    if (window.innerWidth < 768 && !urlState) {
-      handlePaste();
-    }
-  };
-
-  const handleManualPasteConfirm = () => {
-    const trimmed = normalizeGoogleMapsInput(manualPasteValue);
-
-    if (!trimmed) {
-      setError('Vui lòng dán link Google Maps vào ô hỗ trợ.');
-      return;
-    }
-
-    setUrlState(trimmed);
-    setManualPasteOpen(false);
-    setError('');
-    setMessage('Đã nhận link. Bạn hãy bấm Phân tích.');
+  const handleOpenGoogleMaps = () => {
+    window.open('https://www.google.com/maps/dir/', '_blank', 'noopener,noreferrer');
   };
 
   return (
@@ -190,29 +146,29 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
             <span className="font-semibold text-white">Phân tích</span>.
           </span>
           <span className="hidden md:inline">
-            Mẹo nhanh: mở tuyến đường trên Google Maps, nhấn chia sẻ, sao chép link rồi quay lại đây để{' '}
-            <span className="font-semibold text-white">Dán</span> và{' '}
+            Mẹo nhanh: bấm <span className="font-semibold text-white">Mở GG Map</span>, tạo tuyến đường, sao chép link rồi quay lại đây để{' '}
             <span className="font-semibold text-white">Phân tích</span>.
           </span>
         </div>
         
         <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleOpenGoogleMaps}
+            className="flex shrink-0 items-center justify-center gap-1 rounded-lg border border-[#00B14F]/20 bg-[#00B14F]/10 px-2.5 py-2 text-xs font-bold text-[#74E3A3] transition-colors hover:bg-[#00B14F]/18"
+          >
+            <Map className="h-4 w-4" />
+            <span className="hidden min-[370px]:inline">Mở GG Map</span>
+            <span className="min-[370px]:hidden">Map</span>
+          </button>
           <input
-            ref={inputRef}
             type="text"
             value={urlState}
             onChange={(e) => setUrlState(e.target.value)}
             placeholder="https://maps.app.goo.gl/..."
-            className="flex-1 bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#1464F4]"
+            className="min-w-0 flex-1 bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#1464F4]"
             onKeyDown={(e) => e.key === 'Enter' && handleParse()}
           />
-          <button
-            type="button"
-            onClick={handlePaste}
-            className="hidden md:flex bg-white/8 hover:bg-white/12 text-white px-3 py-2 rounded-lg text-sm font-bold items-center justify-center transition-colors shrink-0 border border-white/10"
-          >
-            Dán
-          </button>
           <button
             onClick={handleParse}
             disabled={loading}
@@ -238,56 +194,6 @@ export default function GoogleMapsLinkInput({ onOriginDestFound }) {
       </div>
 
       <UsageGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
-
-      {manualPasteOpen && (
-        <div className="fixed inset-0 z-[2550] flex items-end justify-center bg-black/65 p-3 md:items-center">
-          <div
-            className="absolute inset-0"
-            onClick={() => setManualPasteOpen(false)}
-            aria-hidden="true"
-          />
-
-          <div className="relative z-10 w-full max-w-[520px] rounded-[26px] border border-white/10 bg-[#0B0B0B] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#00B14F]/80">
-              Hỗ trợ dán link
-            </p>
-            <h3 className="mt-1 text-base font-bold text-white">
-              Trình duyệt đang chặn dán tự động
-            </h3>
-            <p className="mt-2 text-xs leading-5 text-white/62">
-              Hãy <span className="font-semibold text-white">chạm giữ</span> trong ô bên dưới, chọn{' '}
-              <span className="font-semibold text-white">Dán</span> từ menu hiện ra, rồi bấm{' '}
-              <span className="font-semibold text-white">Xong</span>.
-            </p>
-
-            <textarea
-              value={manualPasteValue}
-              onChange={(e) => setManualPasteValue(e.target.value)}
-              placeholder="Chạm giữ ở đây rồi chọn Dán..."
-              autoFocus
-              rows={4}
-              className="mt-3 w-full rounded-2xl border border-white/10 bg-black/45 px-3 py-3 text-sm text-white outline-none transition-colors focus:border-[#1464F4]"
-            />
-
-            <div className="mt-3 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setManualPasteOpen(false)}
-                className="flex-1 rounded-xl border border-white/10 bg-white/8 px-4 py-3 text-sm font-semibold text-white/80 transition-colors hover:bg-white/12 hover:text-white"
-              >
-                Huỷ
-              </button>
-              <button
-                type="button"
-                onClick={handleManualPasteConfirm}
-                className="flex-1 rounded-xl bg-[#1464F4] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#0f4eb8]"
-              >
-                Xong
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

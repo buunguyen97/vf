@@ -14,6 +14,152 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+const VIETNAM_MIN_LON_BY_LAT = [
+  [8.3, 104.4],
+  [10.4, 104.45],
+  [11.2, 105.55],
+  [12.2, 106.4],
+  [13.4, 107.05],
+  [15.3, 107.1],
+  [16.6, 106.0],
+  [18.2, 104.6],
+  [19.5, 103.5],
+  [21.0, 102.2],
+  [22.8, 102.0],
+  [23.6, 103.0],
+];
+
+const VIETNAM_ROUTE_CORRIDORS = [
+  // Coastal / QL1A spine, safest for long north-south routes.
+  [
+    [10.933, 108.100], // Phan Thiet
+    [11.565, 108.991], // Phan Rang
+    [12.239, 109.197], // Nha Trang
+    [13.782, 109.219], // Quy Nhon
+    [15.121, 108.804], // Quang Ngai
+    [16.047, 108.206], // Da Nang
+    [17.468, 106.622], // Dong Hoi
+    [18.679, 105.681], // Vinh
+    [20.253, 105.975], // Ninh Binh
+  ],
+  // Inland Vietnam corridor, useful when the coastal route is not ideal.
+  [
+    [11.535, 106.891], // Dong Xoai
+    [12.667, 108.038], // Buon Ma Thuot
+    [13.984, 108.000], // Pleiku
+    [14.350, 108.000], // Kon Tum
+    [16.047, 108.206], // Da Nang
+    [17.468, 106.622], // Dong Hoi
+    [18.679, 105.681], // Vinh
+    [20.253, 105.975], // Ninh Binh
+  ],
+  // North-central inland corridor.
+  [
+    [11.535, 106.891],
+    [12.667, 108.038],
+    [13.984, 108.000],
+    [16.463, 107.590], // Hue
+    [18.679, 105.681],
+    [19.807, 105.776], // Thanh Hoa
+    [20.253, 105.975],
+  ],
+];
+
+function interpolateMinVietnamLon(lat) {
+  const points = VIETNAM_MIN_LON_BY_LAT;
+  if (lat <= points[0][0]) return points[0][1];
+  if (lat >= points[points.length - 1][0]) return points[points.length - 1][1];
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const [latA, lonA] = points[i];
+    const [latB, lonB] = points[i + 1];
+    if (lat >= latA && lat <= latB) {
+      const ratio = (lat - latA) / (latB - latA);
+      return lonA + ((lonB - lonA) * ratio);
+    }
+  }
+
+  return 104;
+}
+
+function isLikelyVietnamDrivingPoint([lon, lat]) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+  if (lat < 8.2 || lat > 23.7 || lon < 102.0 || lon > 110.1) return false;
+
+  // OSRM has no "avoid countries" option. This approximates Vietnam's west
+  // border enough to reject obvious Cambodia/Laos detours while allowing
+  // normal roads near border provinces.
+  return lon >= interpolateMinVietnamLon(lat) - 0.28;
+}
+
+function getForeignRouteRatio(route) {
+  const coords = route?.geometry?.coordinates || [];
+  if (!coords.length) return 1;
+
+  const step = Math.max(1, Math.floor(coords.length / 500));
+  let checked = 0;
+  let foreign = 0;
+
+  for (let i = 0; i < coords.length; i += step) {
+    checked += 1;
+    if (!isLikelyVietnamDrivingPoint(coords[i])) {
+      foreign += 1;
+    }
+  }
+
+  return checked ? foreign / checked : 1;
+}
+
+function isVietnamOnlyRoute(route) {
+  return getForeignRouteRatio(route) <= 0.025;
+}
+
+function selectCorridorWaypoints(corridor, from, to) {
+  const latDirection = to[0] >= from[0] ? 1 : -1;
+  const minLat = Math.min(from[0], to[0]) - 0.25;
+  const maxLat = Math.max(from[0], to[0]) + 0.25;
+
+  return corridor
+    .filter((point) => (
+      point[0] >= minLat &&
+      point[0] <= maxLat &&
+      getDistance(from[0], from[1], point[0], point[1]) > 25 &&
+      getDistance(to[0], to[1], point[0], point[1]) > 25
+    ))
+    .sort((a, b) => latDirection * (a[0] - b[0]));
+}
+
+function buildCorridorRouteCoords(origin, destination, waypoint, corridor) {
+  const anchors = waypoint ? [origin, waypoint, destination] : [origin, destination];
+  const coords = [origin];
+
+  for (let i = 0; i < anchors.length - 1; i++) {
+    const from = anchors[i];
+    const to = anchors[i + 1];
+    const waypoints = selectCorridorWaypoints(corridor, from, to);
+
+    waypoints.forEach((point) => {
+      const last = coords[coords.length - 1];
+      if (getDistance(last[0], last[1], point[0], point[1]) > 8) {
+        coords.push(point);
+      }
+    });
+
+    coords.push(to);
+  }
+
+  return coords;
+}
+
+function addUniqueRoute(routes, route) {
+  if (!route || !isVietnamOnlyRoute(route)) return;
+
+  const isDuplicate = routes.some((existing) => (
+    Math.abs(existing.distance - route.distance) < 5000
+  ));
+  if (!isDuplicate) routes.push(route);
+}
+
 // Fetch a single OSRM route, returns route object or null
 async function fetchOneRoute(coords) {
   const coordStr = coords.map(c => `${c[1]},${c[0]}`).join(';');
@@ -32,23 +178,39 @@ async function fetchOneRoute(coords) {
   }
 }
 
+async function fetchVietnamCorridorRoutes(origin, destination, waypoint) {
+  const candidates = await Promise.all(
+    VIETNAM_ROUTE_CORRIDORS.map((corridor) => (
+      fetchOneRoute(buildCorridorRouteCoords(origin, destination, waypoint, corridor))
+    )),
+  );
+
+  return candidates.filter(Boolean);
+}
+
 // Fetch main route + alternative routes from OSRM (called from browser)
 async function fetchOSRMRoutes(origin, destination, waypoint) {
   const mainCoords = waypoint
     ? [origin, waypoint, destination]
     : [origin, destination];
+  const totalDistApprox = getDistance(origin[0], origin[1], destination[0], destination[1]);
 
   const mainRoute = await fetchOneRoute(mainCoords);
-  if (!mainRoute) {
+  const shouldFetchCorridors = !mainRoute || !isVietnamOnlyRoute(mainRoute) || totalDistApprox > 250;
+  const corridorRoutes = shouldFetchCorridors
+    ? await fetchVietnamCorridorRoutes(origin, destination, waypoint)
+    : [];
+
+  if (!mainRoute && !corridorRoutes.length) {
     throw new Error('Không tìm thấy đường đi giữa hai điểm này.');
   }
 
-  const routes = [mainRoute];
+  const routes = [];
+  addUniqueRoute(routes, mainRoute);
+  corridorRoutes.forEach((route) => addUniqueRoute(routes, route));
 
   // Generate alternative routes if no waypoint
   if (!waypoint) {
-    const totalDistApprox = getDistance(origin[0], origin[1], destination[0], destination[1]);
-
     if (totalDistApprox > 3) {
       const midLat = (origin[0] + destination[0]) / 2;
       const midLon = (origin[1] + destination[1]) / 2;
@@ -70,17 +232,19 @@ async function fetchOSRMRoutes(origin, destination, waypoint) {
           fetchOneRoute([origin, rightWp, destination]),
         ]);
 
-        if (leftRoute && leftRoute.distance < mainRoute.distance * 1.35) {
-          routes.push(leftRoute);
-        }
-        if (rightRoute && rightRoute.distance < mainRoute.distance * 1.35) {
-          routes.push(rightRoute);
-        }
+        addUniqueRoute(routes, leftRoute);
+        addUniqueRoute(routes, rightRoute);
       }
     }
   }
 
-  return routes;
+  if (!routes.length) {
+    throw new Error('Không tìm được tuyến chỉ đi trong Việt Nam. Bạn thử thêm một điểm trung gian trong Việt Nam.');
+  }
+
+  return routes
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 3);
 }
 
 const normalizeCoordinatePair = (coords) => {
@@ -136,20 +300,24 @@ export const evApi = {
   // Step 1: Fetch routes from OSRM (browser-side, no IP blocking)
   // Step 2: Send only essential data to server for battery/station calculations
   getOptimalRoute: async (params) => {
-    const { origin, destination, waypoint, ...serverParams } = params;
+    const { origin, destination, waypoint, prefetchedRoutes, ...serverParams } = params;
 
-    // Fetch routes from OSRM directly in browser
-    const rawRoutes = await fetchOSRMRoutes(origin, destination, waypoint);
+    // Reuse routes already shown on the map when switching alternatives, so
+    // route buttons feel instant and we avoid another OSRM round-trip.
+    const rawRoutes = prefetchedRoutes?.length
+      ? prefetchedRoutes
+      : await fetchOSRMRoutes(origin, destination, waypoint);
 
     // Strip to only what server needs: distance + coordinates (reduced precision)
     // Then downsample to avoid 413 Payload Too Large on long routes (e.g. SG→HN ~50k pts)
     const routes = rawRoutes.map(r => {
-      const rounded = r.geometry.coordinates.map(c => [
+      const sourceCoords = r.geometry?.coordinates || r.polylineCoords?.map(([lat, lng]) => [lng, lat]) || [];
+      const rounded = sourceCoords.map(c => [
         Math.round(c[0] * 10000) / 10000,  // ~11m precision, sufficient for 1km station search
         Math.round(c[1] * 10000) / 10000,
       ]);
       return {
-        distance: r.distance,
+        distance: r.distance ?? (r.distanceKm * 1000),
         geometry: {
           coordinates: downsampleCoordinates(rounded, 3000),
         },
