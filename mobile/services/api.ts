@@ -181,9 +181,15 @@ async function fetchOneRoute(coords: [number, number][]) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, { 
+      signal: controller.signal,
+      headers: { 'User-Agent': 'VFRangeAssistant/1.0' }
+    });
     clearTimeout(timeoutId);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.log('OSRM Error:', res.status, res.statusText);
+      return null;
+    }
     const data = await res.json();
     if (data.code === 'Ok' && data.routes?.length > 0) return data.routes[0];
     return null;
