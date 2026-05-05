@@ -282,6 +282,243 @@ export function downsampleCoordinates(coordinates: number[][], maxPoints = 3000)
   return result;
 }
 
+function normalizeMapsInputUrl(rawValue: string) {
+  const raw = `${rawValue || ''}`.trim();
+  if (!raw) return '';
+
+  const matchedUrl = raw.match(/https?:\/\/[^\s]+|(?:maps\.app\.goo\.gl|goo\.gl|g\.co|google\.[^\s/]+)[^\s]*/i);
+  let normalized = (matchedUrl ? matchedUrl[0] : raw).trim();
+
+  normalized = normalized.replace(/[)\]>]+$/g, '');
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized)) {
+    normalized = `https://${normalized}`;
+  }
+
+  normalized = normalized.replace(/[?&]g_st=[^&]*/g, '');
+  normalized = normalized.replace(/[?&]g_ep=[^&]*/g, '');
+  normalized = normalized.replace(/[?&]lucs=[^&]*/g, '');
+  normalized = normalized.replace(/[?&]skid=[^&]*/g, '');
+
+  return normalized;
+}
+
+function toValidVietnamCoordinatePair(lat: number, lng: number) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < 8 || lat > 24 || lng < 102 || lng > 110) return null;
+  return [lat, lng];
+}
+
+function normalizeParsedCoordinates(result: any) {
+  if (!result || result.error) return result;
+
+  const normalized = {
+    origin: result.origin || null,
+    destination: result.destination || null,
+  };
+
+  if (normalized.origin && !normalized.destination) {
+    normalized.destination = normalized.origin;
+    normalized.origin = null;
+  }
+
+  if (normalized.origin && normalized.destination) {
+    const latDiff = Math.abs(normalized.origin[0] - normalized.destination[0]);
+    const lngDiff = Math.abs(normalized.origin[1] - normalized.destination[1]);
+    const distanceApproxMeters = Math.sqrt((latDiff * latDiff) + (lngDiff * lngDiff)) * 111000;
+    if (distanceApproxMeters < 100) {
+      normalized.origin = null;
+    }
+  }
+
+  return normalized;
+}
+
+function isPlaceOnlyGoogleMapsUrl(urlStr: string) {
+  try {
+    const parsed = new URL(urlStr);
+    const path = parsed.pathname.toLowerCase();
+    return path.includes('/maps/place/') || (path.includes('/place/') && !path.includes('/dir/'));
+  } catch {
+    return false;
+  }
+}
+
+function extractCoordinatePairsFromText(text: string) {
+  const pairs: number[][] = [];
+
+  const d34Matches = [...text.matchAll(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/g)];
+  d34Matches.forEach((match) => {
+    const pair = toValidVietnamCoordinatePair(parseFloat(match[1]), parseFloat(match[2]));
+    if (pair) pairs.push(pair);
+  });
+
+  const d12Matches = [...text.matchAll(/!1d(-?\d+\.\d+)!2d(-?\d+\.\d+)/g)];
+  d12Matches.forEach((match) => {
+    const pair = toValidVietnamCoordinatePair(parseFloat(match[2]), parseFloat(match[1]));
+    if (pair) pairs.push(pair);
+  });
+
+  const bracketMatches = [...text.matchAll(/\[(-?\d+\.\d+),(-?\d+\.\d+)\]/g)];
+  bracketMatches.forEach((match) => {
+    const first = parseFloat(match[1]);
+    const second = parseFloat(match[2]);
+    const latLng = toValidVietnamCoordinatePair(first, second);
+    const lngLat = toValidVietnamCoordinatePair(second, first);
+    if (latLng) pairs.push(latLng);
+    else if (lngLat) pairs.push(lngLat);
+  });
+
+  const rawMatches = [...text.matchAll(/(-?\d{1,2}\.\d{5,})\s*,\s*(-?\d{1,3}\.\d{5,})/g)];
+  rawMatches.forEach((match) => {
+    const pair = toValidVietnamCoordinatePair(parseFloat(match[1]), parseFloat(match[2]));
+    if (pair) pairs.push(pair);
+  });
+
+  return pairs;
+}
+
+function extractCoordinatesFromGoogleMapsUrl(urlStr: string) {
+  let origin: number[] | null = null;
+  let destination: number[] | null = null;
+
+  try {
+    const parsedUrl = new URL(urlStr);
+    const isPlaceOnlyUrl = isPlaceOnlyGoogleMapsUrl(urlStr);
+    const pathParts = parsedUrl.pathname.split('/').filter(Boolean);
+
+    if (pathParts[0] === 'maps' && pathParts[1] === 'dir') {
+      const coordRegex = /^(-?\d+\.\d+),(-?\d+\.\d+)$/;
+      const originMatch = pathParts[2]?.match(coordRegex);
+      const destinationMatch = pathParts[3]?.match(coordRegex);
+
+      if (originMatch) origin = toValidVietnamCoordinatePair(parseFloat(originMatch[1]), parseFloat(originMatch[2]));
+      if (destinationMatch) destination = toValidVietnamCoordinatePair(parseFloat(destinationMatch[1]), parseFloat(destinationMatch[2]));
+    }
+
+    const queryCoordinateParams = [
+      ['origin', 'origin'],
+      ['saddr', 'origin'],
+      ['destination', 'destination'],
+      ['daddr', 'destination'],
+      ['q', 'destination'],
+    ];
+
+    queryCoordinateParams.forEach(([param, target]) => {
+      const value = parsedUrl.searchParams.get(param);
+      if (!value) return;
+
+      const match = value.match(/(-?\d+\.\d+)[,\s]+(-?\d+\.\d+)/);
+      if (!match) return;
+
+      const pair = toValidVietnamCoordinatePair(parseFloat(match[1]), parseFloat(match[2]));
+      if (!pair) return;
+
+      if (target === 'origin' && !origin) origin = pair;
+      if (target === 'destination' && !destination) destination = pair;
+    });
+
+    const atMatch = urlStr.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (atMatch && !destination && !origin) {
+      destination = toValidVietnamCoordinatePair(parseFloat(atMatch[1]), parseFloat(atMatch[2]));
+    }
+
+    const pathMatch = parsedUrl.pathname.match(/\/(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (pathMatch && !destination && !origin) {
+      destination = toValidVietnamCoordinatePair(parseFloat(pathMatch[1]), parseFloat(pathMatch[2]));
+    }
+
+    const extractedPairs = extractCoordinatePairsFromText(urlStr);
+    if (extractedPairs.length >= 2 && !isPlaceOnlyUrl) {
+      if (!origin) origin = extractedPairs[0];
+      if (!destination) destination = extractedPairs[extractedPairs.length - 1];
+    } else if (extractedPairs.length > 0) {
+      if (!destination) destination = extractedPairs[extractedPairs.length - 1];
+    }
+
+    if (!origin && !destination) {
+      return { error: 'Không tìm thấy tọa độ trong link.' };
+    }
+
+    return normalizeParsedCoordinates({ origin, destination });
+  } catch (error: any) {
+    return { error: error?.message || 'URL không hợp lệ.' };
+  }
+}
+
+async function fetchTextWithTimeout(url: string, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 VFRangeAssistant/1.0',
+        'Accept-Language': 'vi-vn',
+      },
+    });
+
+    return {
+      finalUrl: response.url || url,
+      text: await response.text(),
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function parseGoogleMapsLinkOnDevice(url: string) {
+  const normalizedUrl = normalizeMapsInputUrl(url);
+  if (!normalizedUrl) {
+    return { success: false, origin: null, destination: null, message: 'URL không hợp lệ.' };
+  }
+
+  const directExtracted = normalizeParsedCoordinates(extractCoordinatesFromGoogleMapsUrl(normalizedUrl));
+  if (!directExtracted.error && directExtracted.destination) {
+    return {
+      success: true,
+      origin: directExtracted.origin,
+      destination: directExtracted.destination,
+      resolvedUrl: normalizedUrl,
+    };
+  }
+
+  try {
+    const { finalUrl, text } = await fetchTextWithTimeout(normalizedUrl);
+    const finalExtracted = normalizeParsedCoordinates(extractCoordinatesFromGoogleMapsUrl(finalUrl));
+    if (!finalExtracted.error && finalExtracted.destination) {
+      return {
+        success: true,
+        origin: finalExtracted.origin,
+        destination: finalExtracted.destination,
+        resolvedUrl: finalUrl,
+      };
+    }
+
+    const htmlPairs = extractCoordinatePairsFromText(text);
+    if (htmlPairs.length > 0) {
+      return {
+        success: true,
+        origin: null,
+        destination: htmlPairs[htmlPairs.length - 1],
+        resolvedUrl: finalUrl,
+        warning: 'Đã đọc tọa độ trực tiếp trên điện thoại do API server không phản hồi.',
+      };
+    }
+  } catch (error) {
+    // Keep the UI calm: callers receive a useful message instead of a blocking Alert.
+  }
+
+  return {
+    success: false,
+    origin: null,
+    destination: null,
+    resolvedUrl: normalizedUrl,
+    message: 'Không tìm thấy thông tin tọa độ. Bạn thử mở link trên Google Maps rồi chia sẻ lại, hoặc dán link đầy đủ từ trình duyệt.',
+  };
+}
+
 export const evApi = {
   getVehicles: async () => {
     const response = await axios.get(`${API_URL}/vehicles`);
@@ -348,7 +585,19 @@ export const evApi = {
   },
 
   parseGoogleMapsLink: async (url: string) => {
-    const response = await axios.post(`${API_URL}/parse-google-maps-link`, { url });
-    return response.data;
+    let apiResult: any = null;
+
+    try {
+      const response = await axios.post(`${API_URL}/parse-google-maps-link`, { url }, { timeout: 18000 });
+      apiResult = response.data;
+      if (apiResult?.destination) return apiResult;
+    } catch (error) {
+      apiResult = null;
+    }
+
+    const deviceResult = await parseGoogleMapsLinkOnDevice(url);
+    if (deviceResult.destination) return deviceResult;
+
+    return apiResult || deviceResult;
   }
 };

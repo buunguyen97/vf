@@ -150,6 +150,7 @@ export default function MapScreen() {
   // Bottom Sheet
   const bottomSheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ['15%', '50%', '85%'], []);
+  const [sheetIndex, setSheetIndex] = useState(1);
 
   // Derived
   const selectedVehicle = useMemo(
@@ -276,15 +277,41 @@ export default function MapScreen() {
         setReachability(null);
         setRouteError('');
       } else {
-        setRouteError('Không tìm thấy thông tin tọa độ. Vui lòng thử dùng link đầy đủ từ Google Maps.');
+        setRouteError(parsed.message || 'Không tìm thấy thông tin tọa độ. Vui lòng thử dùng link đầy đủ từ Google Maps.');
       }
     } catch (e) {
       console.log('Error parsing link', e);
-      alert("Lỗi khi phân tích link. Vui lòng kiểm tra kết nối mạng.");
+      setRouteError('Lỗi khi phân tích link. Vui lòng kiểm tra server API hoặc thử link đầy đủ từ Google Maps.');
     } finally {
       setIsParsingLink(false);
     }
   }
+
+  const handleSheetHandlePress = () => {
+    const nextIndex = sheetIndex >= 2 ? 0 : 2;
+    bottomSheetRef.current?.snapToIndex(nextIndex);
+    setSheetIndex(nextIndex);
+  };
+
+  const renderSheetHandle = () => (
+    <TouchableOpacity
+      style={styles.sheetHandleTapArea}
+      activeOpacity={0.8}
+      onPress={handleSheetHandlePress}
+    >
+      <View style={styles.bottomSheetIndicator} />
+      <View style={styles.sheetHandleHint}>
+        <Ionicons
+          name={sheetIndex >= 2 ? 'chevron-down' : 'chevron-up'}
+          size={13}
+          color="rgba(255,255,255,0.45)"
+        />
+        <Text style={styles.sheetHandleHintText}>
+          {sheetIndex >= 2 ? 'Chạm để thu panel' : 'Chạm để mở panel'}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
 
   const fitMapToRouteResult = (res: any) => {
     if (!mapRef.current || !location) return;
@@ -731,8 +758,9 @@ export default function MapScreen() {
         ref={bottomSheetRef}
         index={1} // Start at 50%
         snapPoints={snapPoints}
+        onChange={setSheetIndex}
+        handleComponent={renderSheetHandle}
         backgroundStyle={styles.bottomSheetBg}
-        handleIndicatorStyle={styles.bottomSheetIndicator}
       >
         <BottomSheetScrollView 
           contentContainerStyle={{ paddingBottom: 20 }}
@@ -805,6 +833,27 @@ const styles = StyleSheet.create({
   bottomSheetIndicator: {
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
     width: 40,
+    height: 4,
+    borderRadius: 999,
+    alignSelf: 'center',
+  },
+  sheetHandleTapArea: {
+    minHeight: 44,
+    paddingTop: 10,
+    paddingBottom: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetHandleHint: {
+    marginTop: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  sheetHandleHintText: {
+    color: 'rgba(255,255,255,0.42)',
+    fontSize: 10,
+    fontWeight: '700',
   },
   stationCard: {
     position: 'absolute',
