@@ -140,26 +140,31 @@ router.post('/optimal-route', async (req, res) => {
     const sweetSpotMax = minBatteryPct + 10;
 
     const candidateStations = allRouteStations.filter(st => st.distanceFromStartKm < totalDistanceKm);
-    const matchingStations = [];
-
-    for (const st of candidateStations) {
+    const enrichedCandidateStations = candidateStations.map(st => {
       const batteryNeeded = kmToBatteryPct(st.distanceFromStartKm);
       const batteryOnArrival = currentBattery - batteryNeeded;
+      const sweetSpotGap = batteryOnArrival < minBatteryPct
+        ? minBatteryPct - batteryOnArrival
+        : Math.max(0, batteryOnArrival - sweetSpotMax);
 
-      if (batteryOnArrival >= minBatteryPct && batteryOnArrival <= sweetSpotMax) {
-        matchingStations.push({
-          ...st,
-          batteryAtStation: Math.round(batteryOnArrival),
-          score: st.power_kw - (st.detourKm * 50) // Sort by power and proximity
-        });
-      }
-    }
+      return {
+        ...st,
+        batteryAtStation: Math.round(batteryOnArrival),
+        batteryAtStationRaw: batteryOnArrival,
+        sweetSpotGap,
+        isInTargetBatteryBand: batteryOnArrival >= minBatteryPct && batteryOnArrival <= sweetSpotMax,
+        score: st.power_kw - (st.detourKm * 50),
+      };
+    });
+
+    const matchingStations = enrichedCandidateStations.filter(st => st.isInTargetBatteryBand);
 
     matchingStations.sort((a, b) => b.score - a.score);
 
     if (matchingStations.length > 0) {
        matchingStations.forEach((st, idx) => {
          st.isOptimal = true;
+         st.isSuggested = true;
          st.stopNumber = 1;
          st.isRecommended = idx === 0;
          st.alternativeIndex = idx;
@@ -169,22 +174,8 @@ router.post('/optimal-route', async (req, res) => {
     }
 
     if (matchingStations.length === 0) {
-      const fallbackStations = candidateStations
-        .map(st => {
-          const batteryNeeded = kmToBatteryPct(st.distanceFromStartKm);
-          const batteryOnArrival = currentBattery - batteryNeeded;
-          const sweetSpotGap = batteryOnArrival < minBatteryPct
-            ? minBatteryPct - batteryOnArrival
-            : Math.max(0, batteryOnArrival - sweetSpotMax);
-
-          return {
-            ...st,
-            batteryAtStation: Math.round(batteryOnArrival),
-            sweetSpotGap,
-            score: (sweetSpotGap * -10) + st.power_kw - (st.detourKm * 80),
-          };
-        })
-        .filter(st => st.batteryAtStation >= minBatteryPct)
+      const fallbackStations = enrichedCandidateStations
+        .filter(st => st.batteryAtStationRaw >= minBatteryPct)
         .sort((a, b) => {
           if (a.sweetSpotGap !== b.sweetSpotGap) return a.sweetSpotGap - b.sweetSpotGap;
           if (a.detourKm !== b.detourKm) return a.detourKm - b.detourKm;
@@ -198,6 +189,7 @@ router.post('/optimal-route', async (req, res) => {
           st.stopNumber = 1;
           st.isRecommended = idx === 0;
           st.isFallbackSuggested = true;
+          st.isSuggested = true;
           st.alternativeIndex = idx;
           optimalStations.push(st);
         });
@@ -210,18 +202,13 @@ router.post('/optimal-route', async (req, res) => {
     const canReachDestination = (currentBattery - kmToBatteryPct(totalDistanceKm)) >= minBatteryPct;
     
     if (matchingStations.length === 0 && !canReachDestination) {
-        const reachableFallbackStations = candidateStations
-          .map(st => {
-            const batteryNeeded = kmToBatteryPct(st.distanceFromStartKm);
-            const batteryOnArrival = currentBattery - batteryNeeded;
-            return {
-              ...st,
-              batteryAtStation: Math.round(batteryOnArrival),
-              score: (st.distanceFromStartKm * 6) + st.power_kw - (st.detourKm * 120),
-            };
-          })
+        const reachableFallbackStations = enrichedCandidateStations
           .filter(st => st.batteryAtStation >= 5)
-          .sort((a, b) => b.score - a.score)
+          .sort((a, b) => (
+            (b.distanceFromStartKm * 6) + b.power_kw - (b.detourKm * 120)
+          ) - (
+            (a.distanceFromStartKm * 6) + a.power_kw - (a.detourKm * 120)
+          ))
           .slice(0, 1);
 
         if (reachableFallbackStations.length > 0) {

@@ -606,8 +606,13 @@ export default function MapScreen() {
           <Marker
             coordinate={originOverride}
             title="Điểm đi"
-            pinColor="green"
-          />
+            anchor={{ x: 0.5, y: 0.5 }}
+            tracksViewChanges={false}
+          >
+            <View style={styles.originMarkerHalo}>
+              <View style={styles.originMarkerDot} />
+            </View>
+          </Marker>
         )}
 
         {/* Alternative route polylines */}
@@ -645,7 +650,12 @@ export default function MapScreen() {
 
         {/* Render Stations */}
         {(routeData?.allRouteStations || routeData?.optimalStations)?.map((station: any) => {
-          const isOptimal = routeData?.optimalStations?.some((s: any) => s.id === station.id);
+          const optimalStation = routeData?.optimalStations?.find((s: any) => s.id === station.id);
+          const isSuggested = Boolean(optimalStation);
+          const isTargetBandSuggestion = optimalStation?.isInTargetBatteryBand ?? (
+            optimalStation?.batteryAtStation >= Math.max(targetBatteryPercent, 5) &&
+            optimalStation?.batteryAtStation <= Math.max(targetBatteryPercent, 5) + 10
+          );
           const isSelected = selectedStation?.id === station.id;
           
           return (
@@ -656,7 +666,7 @@ export default function MapScreen() {
             >
               <View style={[
                 styles.stationMarker, 
-                { backgroundColor: isOptimal ? '#22c55e' : '#06b6d4' },
+                { backgroundColor: isTargetBandSuggestion ? '#22c55e' : (isSuggested ? '#f59e0b' : '#06b6d4') },
                 isSelected && styles.stationMarkerSelected
               ]}>
                 <Text style={styles.stationMarkerText}>{station.power_kw}</Text>
@@ -983,6 +993,29 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
     lineHeight: 18,
+  },
+  originMarkerHalo: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(37, 99, 235, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(37, 99, 235, 0.22)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  originMarkerDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#2563eb',
+    borderWidth: 3,
+    borderColor: '#ffffff',
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 4,
   },
   stationMarker: {
     width: 34,
