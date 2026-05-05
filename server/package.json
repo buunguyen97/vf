@@ -6,13 +6,16 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "node --watch src/app.js",
-    "seed": "node src/database/seed.js"
+    "seed": "node src/database/seed.js",
+    "sync-stations": "node src/database/fetchKmlStations.js"
   },
   "dependencies": {
     "axios": "^1.15.1",
     "better-sqlite3": "^11.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "node-cron": "^4.2.1",
+    "node-telegram-bot-api": "^0.67.0"
   }
 }

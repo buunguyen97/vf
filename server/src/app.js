@@ -5,6 +5,8 @@ require('dotenv').config();
 
 const { getDb, closeDb } = require('./database/init');
 const { seed } = require('./database/seed');
+const { startStationSyncScheduler, runSync, getLastSyncResult, getSyncHistory, stopScheduler } = require('./scheduler/stationSync');
+const { initTelegramBot, stopBot } = require('./services/telegramBot');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -63,6 +65,36 @@ app.use('/api', reachabilityRoutes);
 app.use('/api', chargerRoutes);
 app.use('/api', routePlanningRoutes);
 app.use('/api', googleMapsParserRoutes);
+
+// Station sync endpoints
+app.get('/api/station-sync/status', (req, res) => {
+  const lastResult = getLastSyncResult();
+  const db = getDb();
+  const currentCount = db.prepare('SELECT COUNT(*) as c FROM charging_stations').get().c;
+  const powerDist = db.prepare('SELECT power_kw, COUNT(*) as count FROM charging_stations GROUP BY power_kw ORDER BY power_kw DESC').all();
+  res.json({
+    currentStationCount: currentCount,
+    powerDistribution: powerDist,
+    schedule: 'Every Monday at 03:00 AM (Asia/Ho_Chi_Minh)',
+    lastSync: lastResult || { message: 'No sync has run yet since server start' },
+  });
+});
+
+app.get('/api/station-sync/history', (req, res) => {
+  res.json({
+    history: getSyncHistory(),
+  });
+});
+
+app.post('/api/station-sync/trigger', async (req, res) => {
+  try {
+    console.log('[API] Manual station sync triggered');
+    const result = await runSync();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // Nominatim search proxy (avoids 403 from browser - User-Agent required)
 app.get('/api/search-location', async (req, res) => {
@@ -167,10 +199,16 @@ if (process.env.NODE_ENV === 'production') {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('Shutting down server...');
+  stopScheduler();
+  stopBot();
   closeDb();
   process.exit();
 });
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server is running on port ${PORT} (0.0.0.0)`);
+  // Initialize Telegram bot
+  initTelegramBot();
+  // Start the weekly station sync scheduler
+  startStationSyncScheduler();
 });
