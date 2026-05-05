@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ActivityIndicator, Linking, Switch } from 'react-native';
 import { FontAwesome5, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
@@ -6,8 +6,10 @@ import * as Clipboard from 'expo-clipboard';
 import { 
   getEnergyPer1PercentWh, 
   getAdjustedDefaultConsumption, 
-  getDefaultKmPer1Percent 
+  getDefaultKmPer1Percent,
+  getConditionRangeLossPercent,
 } from '../utils/consumption';
+import { sortVehiclesByVinFastOrder } from '../utils/vehicles';
 
 export default function PlannerControls({
   vehicles,
@@ -32,6 +34,7 @@ export default function PlannerControls({
 }: any) {
   const [googleLink, setGoogleLink] = useState('');
   const [showVehicleList, setShowVehicleList] = useState(false);
+  const sortedVehicles = useMemo(() => sortVehiclesByVinFastOrder(vehicles), [vehicles]);
   const selectedVehicle = vehicles.find((v: any) => v.id === selectedVehicleId);
 
   // Consumption Logic
@@ -40,6 +43,11 @@ export default function PlannerControls({
   const energyPer1Percent = selectedVehicle ? getEnergyPer1PercentWh(selectedVehicle) : 600;
   const kmPer1Percent = parseFloat((energyPer1Percent / currentConsumption).toFixed(1));
   const defaultKmPer1Percent = selectedVehicle ? getDefaultKmPer1Percent(selectedVehicle) : 2.0;
+  const degradationPercent = getConditionRangeLossPercent({
+    speed: conditions.speed,
+    temperature: conditions.temperature,
+    acOn: conditions.acOn,
+  });
   
   const minKm = parseFloat((energyPer1Percent / 350).toFixed(1));
   const maxKm = parseFloat((energyPer1Percent / 50).toFixed(1));
@@ -82,7 +90,7 @@ export default function PlannerControls({
 
         {showVehicleList && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginTop: 10, marginHorizontal: -12}} contentContainerStyle={{paddingHorizontal: 12}}>
-            {vehicles.map((v: any) => (
+            {sortedVehicles.map((v: any) => (
               <TouchableOpacity 
                 key={v.id} 
                 style={[styles.pillBtn, selectedVehicleId === v.id && styles.pillBtnActive]}
@@ -133,7 +141,7 @@ export default function PlannerControls({
         <Text style={styles.subtext}>Giữ lại tối thiểu {Math.round(targetBatteryPercent)}% pin khi đến trạm hoặc điểm đến.</Text>
         <Slider
           style={{width: '100%', height: 40}}
-          minimumValue={5}
+          minimumValue={10}
           maximumValue={50}
           step={1}
           value={targetBatteryPercent}
@@ -291,15 +299,25 @@ export default function PlannerControls({
          </View>
          <Slider
             style={{width: '100%', height: 40}}
-            minimumValue={10}
+            minimumValue={-10}
             maximumValue={50}
-            step={2}
+            step={1}
             value={conditions.temperature}
             onValueChange={(v) => setConditions({...conditions, temperature: v})}
             minimumTrackTintColor="rgba(255,255,255,0.2)"
             maximumTrackTintColor="rgba(255,255,255,0.1)"
             thumbTintColor="#fff"
          />
+
+         <View style={[styles.flexBetween, styles.lossRow]}>
+           <Text style={{color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600'}}>Trừ hao km/1%</Text>
+           <Text style={[
+             styles.lossValue,
+             degradationPercent > 0 ? styles.lossValueBad : styles.lossValueGood
+           ]}>
+             {degradationPercent}%
+           </Text>
+         </View>
 
          <View style={[styles.flexBetween, {marginTop: 8, paddingVertical: 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)'}]}>
            <View style={{flexDirection: 'row', alignItems: 'center'}}>
@@ -511,6 +529,25 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.5)',
     fontSize: 10,
     marginLeft: 4,
+  },
+  lossRow: {
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  lossValue: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  lossValueBad: {
+    color: '#DA303E',
+  },
+  lossValueGood: {
+    color: '#00B14F',
   },
   actionBtn: {
     backgroundColor: '#00B14F',

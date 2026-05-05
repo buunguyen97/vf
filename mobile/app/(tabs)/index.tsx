@@ -7,9 +7,115 @@ import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 
 import { evApi } from '../../services/api';
 import { getAdjustedDefaultConsumption } from '../../utils/consumption';
+import { sortVehiclesByVinFastOrder } from '../../utils/vehicles';
 import PlannerControls from '../../components/PlannerControls';
+import RouteItinerary from '../../components/RouteItinerary';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout>;
+
+  return new Promise((resolve, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => clearTimeout(timeoutId));
+  });
+}
+
+function toMapCoordinates(polylineCoords: number[][] = []) {
+  return polylineCoords.map((c: number[]) => ({ latitude: c[0], longitude: c[1] }));
+}
+
+function roundKm(value: any) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Math.max(0, Math.round(num * 10) / 10);
+}
+
+function getCleanStationAddress(station: any) {
+  const raw = `${station?.address || station?.name || ''}`.trim();
+  if (!raw) return station?.name || 'Trạm sạc VinFast';
+
+  let cleaned = raw;
+  const cutMatch = cleaned.match(/(Công suất|Công sạc|Trạm sạc|Thời gian hoạt động|Gửi xe|Cập nhật lần cuối|Latitude|Longitude)\s*:/i);
+  if (cutMatch?.index !== undefined) {
+    cleaned = cleaned.slice(0, cutMatch.index).trim();
+  }
+
+  const specMatch = cleaned.match(/\d+\s*cổng[\s\S]*?(?:kW|KW)/i);
+  if (specMatch?.index !== undefined) {
+    cleaned = cleaned.slice(0, specMatch.index).trim();
+  }
+
+  const result = cleaned
+    .replace(/^Địa\s*Chỉ:\s*/i, '')
+    .replace(/^Địa\s*chỉ:\s*/i, '')
+    .replace(/(?:,|\s)*(Công sạc|Cổng sạc|Công suất)\s*:?\s*$/i, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return result || station?.name || 'Trạm sạc VinFast';
+}
+
+function getChargingSpecCards(station: any) {
+  const raw = `${station?.address || station?.name || ''}`;
+  const parsedSpecs = [...raw.matchAll(/(\d+)\s*cổng\s*(\d+)\s*(?:kW|KW)/gi)].map((match) => ({
+    count: Number(match[1]),
+    power: Number(match[2]),
+  }));
+
+  if (parsedSpecs.length > 0) return parsedSpecs.slice(0, 4);
+  if (station?.power_kw) return [{ count: station?.plugs?.length || 1, power: Number(station.power_kw) }];
+  return [];
+}
+
+function getReachabilitySummary(stationReachability: any) {
+  if (!stationReachability) return '';
+
+  const batteryLeftPercent = stationReachability.batteryLeftPercent;
+  const minBatteryPercent = stationReachability.minBatteryPercent;
+
+  if (batteryLeftPercent === undefined || batteryLeftPercent === null) return '';
+  if (minBatteryPercent === undefined || minBatteryPercent === null) {
+    return `Pin dự kiến khi đến Trạm Sạc: ${batteryLeftPercent}%.`;
+  }
+
+  const sweetSpotMax = minBatteryPercent + 10;
+  const band = `${minBatteryPercent}% -> ${sweetSpotMax}%`;
+
+  if (batteryLeftPercent >= minBatteryPercent && batteryLeftPercent <= sweetSpotMax) {
+    return `Pin dự kiến khi đến Trạm Sạc: ${batteryLeftPercent}% (khoảng tối thiểu: ${band}).`;
+  }
+
+  if (batteryLeftPercent > sweetSpotMax) {
+    return `Pin dự kiến khi đến Trạm Sạc: ${batteryLeftPercent}% (cao hơn khoảng tối thiểu: ${band}).`;
+  }
+
+  return `Pin dự kiến khi đến Trạm Sạc: ${batteryLeftPercent}% (thấp hơn khoảng tối thiểu: ${band}).`;
+}
+
+function getStationDistanceToStartKm(station: any, stationReachability: any) {
+  return roundKm(
+    station?.distanceFromStartKm ??
+    station?.distanceToStationKm ??
+    station?.distanceKm ??
+    stationReachability?.distanceKm,
+  );
+}
+
+function getStationDistanceToDestinationKm(station: any, data: any, distanceToStartKm: number | null) {
+  const explicitDistance = roundKm(station?.distanceToDestinationKm);
+  if (explicitDistance !== null) return explicitDistance;
+
+  if (distanceToStartKm !== null && data?.totalDistanceKm !== undefined) {
+    return roundKm(Number(data.totalDistanceKm) - distanceToStartKm);
+  }
+
+  return null;
+}
 
 export default function MapScreen() {
   // Location
@@ -17,6 +123,7 @@ export default function MapScreen() {
   const [loading, setLoading] = useState(true);
   const [locationName, setLocationName] = useState('');
   const mapRef = useRef<MapView>(null);
+  const routeRequestIdRef = useRef(0);
 
   // Routing State
   const [destination, setDestination] = useState<any>(null);
@@ -50,6 +157,15 @@ export default function MapScreen() {
     [vehicles, selectedVehicleId],
   );
 
+  const routeChoices = useMemo(() => (
+    (routeData?.alternativeRoutes || [])
+      .slice()
+      .sort((a: any, b: any) => a.index - b.index)
+  ), [routeData]);
+
+  const selectedRouteIndex = routeData?.selectedRouteIndex ?? 0;
+  const showRouteChoiceBar = !!destination && routeChoices.length > 1 && !selectedStation;
+
   // Fetch weather + location name
   const fetchWeatherForLocation = (lat: number, lon: number) => {
     fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`)
@@ -71,19 +187,55 @@ export default function MapScreen() {
 
   useEffect(() => {
     (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        let loc = await Location.getCurrentPositionAsync({});
-        setLocation(loc);
-        fetchWeatherForLocation(loc.coords.latitude, loc.coords.longitude);
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setLocationName('Chưa cấp quyền vị trí');
+        } else {
+          const servicesEnabled = await Location.hasServicesEnabledAsync();
+          if (!servicesEnabled) {
+            setLocationName('GPS đang tắt');
+          } else {
+            const lastKnownLocation = await Location.getLastKnownPositionAsync({
+              maxAge: 5 * 60 * 1000,
+              requiredAccuracy: 5000,
+            });
+
+            if (lastKnownLocation) {
+              setLocation(lastKnownLocation);
+              fetchWeatherForLocation(lastKnownLocation.coords.latitude, lastKnownLocation.coords.longitude);
+            }
+
+            try {
+              const currentLocation = await withTimeout(
+                Location.getCurrentPositionAsync({
+                  accuracy: Location.Accuracy.Balanced,
+                }),
+                8000,
+                'Current location timeout',
+              );
+              setLocation(currentLocation);
+              fetchWeatherForLocation(currentLocation.coords.latitude, currentLocation.coords.longitude);
+            } catch (error) {
+              console.warn('Current location unavailable:', error);
+              if (!lastKnownLocation) {
+                setLocationName('Không lấy được vị trí hiện tại');
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Location permission/check failed:', error);
+        setLocationName('Không lấy được vị trí hiện tại');
       }
 
       try {
         const v = await evApi.getVehicles();
-        setVehicles(v);
-        if (v.length > 0) {
-          setSelectedVehicleId(v[0].id);
-          setConditions(prev => ({ ...prev, consumptionWhKm: getAdjustedDefaultConsumption(v[0]) }));
+        const sortedVehicles = sortVehiclesByVinFastOrder(v);
+        setVehicles(sortedVehicles);
+        if (sortedVehicles.length > 0) {
+          setSelectedVehicleId(sortedVehicles[0].id);
+          setConditions(prev => ({ ...prev, consumptionWhKm: getAdjustedDefaultConsumption(sortedVehicles[0]) }));
         }
       } catch (error) {
         console.error("API Fetch Error:", error);
@@ -119,6 +271,12 @@ export default function MapScreen() {
       const parsed = await evApi.parseGoogleMapsLink(link);
       if (parsed.destination) {
         setDestination({ latitude: parsed.destination[0], longitude: parsed.destination[1] });
+        setRouteData(null);
+        setSelectedStation(null);
+        setReachability(null);
+        setRouteError('');
+      } else {
+        setRouteError('Không tìm thấy thông tin tọa độ. Vui lòng thử dùng link đầy đủ từ Google Maps.');
       }
     } catch (e) {
       console.log('Error parsing link', e);
@@ -128,8 +286,38 @@ export default function MapScreen() {
     }
   }
 
+  const fitMapToRouteResult = (res: any) => {
+    if (!mapRef.current || !location) return;
+
+    let coords: any[] = [];
+    if (res.polylineCoords && res.polylineCoords.length > 0) {
+      coords = toMapCoordinates(res.polylineCoords);
+    } else if (res.optimalStations) {
+      coords = res.optimalStations.map((s: any) => ({ latitude: s.latitude, longitude: s.longitude }));
+      coords.push({ latitude: location.coords.latitude, longitude: location.coords.longitude });
+    }
+
+    if (coords.length > 0) {
+      mapRef.current.fitToCoordinates(coords, {
+        edgePadding: { top: 90, right: 50, bottom: SCREEN_HEIGHT * 0.22, left: 50 },
+        animated: true,
+      });
+    }
+  };
+
   const handleSuggestStations = async () => {
-    if (!location || !selectedVehicleId) return;
+    if (!selectedVehicleId) {
+      setRouteError('Bạn chọn dòng xe trước rồi mình mới tính được trạm sạc phù hợp.');
+      return;
+    }
+
+    if (!location) {
+      setRouteError('Chưa lấy được vị trí hiện tại. Bạn bật GPS/quyền vị trí rồi thử lại nhé.');
+      return;
+    }
+
+    const requestId = routeRequestIdRef.current + 1;
+    routeRequestIdRef.current = requestId;
 
     setIsRouting(true);
     setSelectedStation(null);
@@ -155,29 +343,78 @@ export default function MapScreen() {
         const stations = await evApi.getChargers(location.coords.latitude, location.coords.longitude, 20);
         res = { optimalStations: stations.slice(0, 5), polylineCoords: [] };
       }
+
+      if (requestId !== routeRequestIdRef.current) return;
       
       setRouteData(res);
-      
-      if (mapRef.current) {
-        let coords: any[] = [];
-        if (res.polylineCoords && res.polylineCoords.length > 0) {
-          coords = res.polylineCoords.map((c: number[]) => ({ latitude: c[0], longitude: c[1] }));
-        } else if (res.optimalStations) {
-          coords = res.optimalStations.map((s: any) => ({ latitude: s.latitude, longitude: s.longitude }));
-          coords.push({ latitude: location.coords.latitude, longitude: location.coords.longitude });
-        }
-        if (coords.length > 0) {
-          mapRef.current.fitToCoordinates(coords, {
-            edgePadding: { top: 50, right: 50, bottom: SCREEN_HEIGHT * 0.2, left: 50 },
-            animated: true,
-          });
-        }
-      }
+      fitMapToRouteResult(res);
     } catch (error: any) {
+      if (requestId !== routeRequestIdRef.current) return;
       console.error(error);
       setRouteError(error?.response?.data?.message || error?.message || 'Không thể gợi ý trạm sạc.');
     } finally {
-      setIsRouting(false);
+      if (requestId === routeRequestIdRef.current) {
+        setIsRouting(false);
+      }
+    }
+  };
+
+  const handleRouteReplan = async (routeIndex: number) => {
+    if (!destination || !location || !selectedVehicleId) return;
+    if (routeIndex === selectedRouteIndex) return;
+
+    const requestId = routeRequestIdRef.current + 1;
+    routeRequestIdRef.current = requestId;
+    const reusableRoutes = routeData?.alternativeRoutes?.length ? routeData.alternativeRoutes : undefined;
+    const optimisticRoute = reusableRoutes?.find((route: any) => route.index === routeIndex);
+
+    setIsRouting(true);
+    setSelectedStation(null);
+    setReachability(null);
+    setRouteError('');
+    bottomSheetRef.current?.collapse();
+
+    if (optimisticRoute?.polylineCoords?.length) {
+      const optimisticData = {
+        ...routeData,
+        selectedRouteIndex: routeIndex,
+        totalDistanceKm: Math.round(optimisticRoute.distanceKm || routeData?.totalDistanceKm || 0),
+        polylineCoords: optimisticRoute.polylineCoords,
+        allRouteStations: [],
+        optimalStations: [],
+        chargingStops: [],
+        insufficientBattery: false,
+        emergencyStation: null,
+      };
+      setRouteData(optimisticData);
+      fitMapToRouteResult(optimisticData);
+    }
+
+    try {
+      const res = await evApi.getOptimalRoute({
+        origin: [location.coords.latitude, location.coords.longitude],
+        destination: [destination.latitude, destination.longitude],
+        waypoint: null,
+        currentBattery: batteryPercent,
+        targetBattery: targetBatteryPercent,
+        vehicleId: selectedVehicleId,
+        vehicleName: selectedVehicle?.name,
+        conditions,
+        routeIndex,
+        prefetchedRoutes: reusableRoutes,
+      });
+
+      if (requestId !== routeRequestIdRef.current) return;
+      setRouteData(res);
+      fitMapToRouteResult(res);
+    } catch (error: any) {
+      if (requestId !== routeRequestIdRef.current) return;
+      console.error(error);
+      setRouteError(error?.response?.data?.message || error?.message || 'Không thể đổi tuyến đường.');
+    } finally {
+      if (requestId === routeRequestIdRef.current) {
+        setIsRouting(false);
+      }
     }
   };
 
@@ -216,6 +453,8 @@ export default function MapScreen() {
   };
 
   const resetRoute = () => {
+    routeRequestIdRef.current += 1;
+    setIsRouting(false);
     setDestination(null);
     setRouteData(null);
     setSelectedStation(null);
@@ -244,6 +483,14 @@ export default function MapScreen() {
         latitudeDelta: 0.1,
         longitudeDelta: 0.1,
       };
+  const selectedStationDistanceToStartKm = selectedStation
+    ? getStationDistanceToStartKm(selectedStation, reachability)
+    : null;
+  const selectedStationDistanceToDestinationKm = selectedStation
+    ? getStationDistanceToDestinationKm(selectedStation, routeData, selectedStationDistanceToStartKm)
+    : null;
+  const selectedStationChargingSpecs = selectedStation ? getChargingSpecCards(selectedStation) : [];
+  const reachabilitySummary = getReachabilitySummary(reachability);
 
   return (
     <View style={styles.container}>
@@ -267,10 +514,27 @@ export default function MapScreen() {
           />
         )}
 
+        {/* Alternative route polylines */}
+        {routeData?.alternativeRoutes?.map((altRoute: any) => {
+          if (altRoute.index === selectedRouteIndex) return null;
+          if (!altRoute.polylineCoords?.length) return null;
+
+          return (
+            <Polyline
+              key={`alt-route-${altRoute.index}`}
+              coordinates={toMapCoordinates(altRoute.polylineCoords)}
+              strokeColor="#6b7280"
+              strokeWidth={4}
+              tappable
+              onPress={() => handleRouteReplan(altRoute.index)}
+            />
+          );
+        })}
+
         {/* Render Route Polyline */}
         {routeData?.polylineCoords && routeData.polylineCoords.length > 0 && (
           <Polyline
-            coordinates={routeData.polylineCoords.map((c: number[]) => ({ latitude: c[0], longitude: c[1] }))}
+            coordinates={toMapCoordinates(routeData.polylineCoords)}
             strokeColor="#1464F4"
             strokeWidth={5}
           />
@@ -308,6 +572,34 @@ export default function MapScreen() {
         })}
       </MapView>
 
+      {/* Route Choice Bar */}
+      {showRouteChoiceBar && (
+        <View style={styles.routeChoiceBar}>
+          <Text style={styles.routeChoiceTitle}>CHỌN TUYẾN ĐƯỜNG</Text>
+          <View style={styles.routeChoiceRow}>
+            {routeChoices.map((route: any) => {
+              const isActive = route.index === selectedRouteIndex;
+              return (
+                <TouchableOpacity
+                  key={route.index}
+                  style={[styles.routeChoiceBtn, isActive && styles.routeChoiceBtnActive]}
+                  activeOpacity={0.82}
+                  disabled={isActive}
+                  onPressIn={() => handleRouteReplan(route.index)}
+                >
+                  <Text style={[styles.routeChoiceName, isActive && styles.routeChoiceTextActive]}>
+                    Tuyến {route.index + 1}
+                  </Text>
+                  <Text style={[styles.routeChoiceDistance, isActive && styles.routeChoiceDistanceActive]}>
+                    {Math.round(route.distanceKm)} km
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
       {/* Floating Station Card */}
       {selectedStation && (
         <View style={styles.stationCard}>
@@ -318,7 +610,7 @@ export default function MapScreen() {
                 Địa chỉ trạm
               </Text>
               <Text style={{fontSize: 14, fontWeight: 'bold', color: '#334155', marginTop: 4, lineHeight: 20}}>
-                {selectedStation.address || selectedStation.name || 'Trạm sạc VinFast'}
+                {getCleanStationAddress(selectedStation)}
               </Text>
             </View>
             <View style={{alignItems: 'flex-end', gap: 6}}>
@@ -339,26 +631,36 @@ export default function MapScreen() {
           </View>
 
           {/* Charging Specs */}
-          <View style={{flexDirection: 'row', gap: 8, marginTop: 12}}>
-            <View style={{flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f0fdf4', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(34,197,94,0.2)'}}>
-              <Text style={{fontSize: 16, fontWeight: '900', color: '#166534'}}>{selectedStation.power_kw} <Text style={{fontSize: 10, fontWeight: 'bold'}}>kW</Text></Text>
-              <View style={{backgroundColor: '#fff', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(34,197,94,0.2)'}}>
-                <Text style={{fontSize: 10, fontWeight: 'bold', color: '#15803d'}}>{selectedStation.plugs?.length || 1} cổng</Text>
-              </View>
+          {selectedStationChargingSpecs.length > 0 && (
+            <View style={{flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12}}>
+              {selectedStationChargingSpecs.map((spec: any, index: number) => (
+                <View key={`${spec.power}-${spec.count}-${index}`} style={{flexGrow: 1, minWidth: selectedStationChargingSpecs.length === 1 ? '100%' : '48%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f0fdf4', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(34,197,94,0.2)'}}>
+                  <Text style={{fontSize: 16, fontWeight: '900', color: '#166534'}}>{spec.power} <Text style={{fontSize: 10, fontWeight: 'bold'}}>kW</Text></Text>
+                  <View style={{backgroundColor: '#fff', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(34,197,94,0.2)'}}>
+                    <Text style={{fontSize: 10, fontWeight: 'bold', color: '#15803d'}}>{spec.count} cổng</Text>
+                  </View>
+                </View>
+              ))}
             </View>
-          </View>
+          )}
 
           {/* Distance Info */}
-          {(selectedStation.distanceToStationKm || routeData) && (
+          {routeData && selectedStationDistanceToStartKm !== null && selectedStationDistanceToDestinationKm !== null && (
             <View style={{flexDirection: 'row', gap: 8, marginTop: 8}}>
               <View style={{flex: 1, backgroundColor: '#eff6ff', borderRadius: 16, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#dbeafe'}}>
                 <Text style={{fontSize: 10, color: 'rgba(20,100,244,0.7)', textTransform: 'uppercase', fontWeight: 'bold'}}>Đến trạm</Text>
-                <Text style={{fontSize: 14, color: '#1464F4', fontWeight: '900', marginTop: 4}}>{selectedStation.distanceToStationKm || '0'} km</Text>
+                <Text style={{fontSize: 14, color: '#1464F4', fontWeight: '900', marginTop: 4}}>{selectedStationDistanceToStartKm} km</Text>
               </View>
               <View style={{flex: 1, backgroundColor: '#ecfeff', borderRadius: 16, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#cffafe'}}>
                 <Text style={{fontSize: 10, color: 'rgba(2,132,199,0.7)', textTransform: 'uppercase', fontWeight: 'bold'}}>Từ trạm đến đích</Text>
-                <Text style={{fontSize: 14, color: '#0369a1', fontWeight: '900', marginTop: 4}}>{selectedStation.distanceToDestinationKm || '0'} km</Text>
+                <Text style={{fontSize: 14, color: '#0369a1', fontWeight: '900', marginTop: 4}}>{selectedStationDistanceToDestinationKm} km</Text>
               </View>
+            </View>
+          )}
+          {!routeData && selectedStationDistanceToStartKm !== null && (
+            <View style={{backgroundColor: '#eff6ff', borderRadius: 16, paddingVertical: 12, alignItems: 'center', borderWidth: 1, borderColor: '#dbeafe', marginTop: 8}}>
+              <Text style={{fontSize: 10, color: 'rgba(20,100,244,0.7)', textTransform: 'uppercase', fontWeight: 'bold'}}>Quãng đường đến trạm</Text>
+              <Text style={{fontSize: 14, color: '#1464F4', fontWeight: '900', marginTop: 4}}>{selectedStationDistanceToStartKm} km</Text>
             </View>
           )}
 
@@ -373,12 +675,12 @@ export default function MapScreen() {
               </View>
               {reachability.canReach && (
                 <Text style={{fontSize: 11, color: '#475569', marginTop: 6, lineHeight: 16}}>
-                  Pin dự kiến khi đến Trạm Sạc: <Text style={{fontWeight: 'bold', color: '#000'}}>{reachability.batteryLeftPercent}%</Text>
+                  {reachabilitySummary || `Pin dự kiến khi đến Trạm Sạc: ${reachability.batteryLeftPercent}%.`}
                 </Text>
               )}
               {!reachability.canReach && (
                 <Text style={{fontSize: 11, color: '#475569', marginTop: 6, lineHeight: 16}}>
-                  Cần sạc ở trạm gần hơn. Trạm này cách {Math.round(reachability.distanceKm)} km.
+                  {reachabilitySummary || `Cần sạc ở trạm gần hơn. Trạm này cách ${Math.round(reachability.distanceKm || 0)} km.`}
                 </Text>
               )}
             </View>
@@ -416,7 +718,7 @@ export default function MapScreen() {
         </TouchableOpacity>
       )}
 
-      {isRouting && (
+      {isRouting && !showRouteChoiceBar && (
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" color="#00B14F" />
@@ -443,7 +745,14 @@ export default function MapScreen() {
             </View>
           ) : null}
 
-
+          {routeData && (
+            <RouteItinerary
+              stations={routeData.optimalStations}
+              chargingStops={routeData.chargingStops}
+              onStationSelect={handleStationSelect}
+              insufficientBattery={routeData.insufficientBattery}
+            />
+          )}
 
           <PlannerControls 
             vehicles={vehicles}
@@ -536,6 +845,72 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
     fontSize: 12,
+  },
+  routeChoiceBar: {
+    position: 'absolute',
+    top: 36,
+    left: 18,
+    right: 18,
+    backgroundColor: 'rgba(17,17,17,0.9)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    zIndex: 450,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  routeChoiceTitle: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 10,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: 1.4,
+    marginBottom: 8,
+  },
+  routeChoiceRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  routeChoiceBtn: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  routeChoiceBtnActive: {
+    backgroundColor: '#1464F4',
+    borderColor: '#1464F4',
+    shadowColor: '#1464F4',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.32,
+    shadowRadius: 14,
+    elevation: 7,
+  },
+  routeChoiceName: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  routeChoiceTextActive: {
+    color: '#fff',
+  },
+  routeChoiceDistance: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  routeChoiceDistanceActive: {
+    color: 'rgba(255,255,255,0.82)',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
