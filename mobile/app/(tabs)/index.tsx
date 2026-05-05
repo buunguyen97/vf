@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { StyleSheet, View, Text, ActivityIndicator, Dimensions, TouchableOpacity, Linking } from 'react-native';
+import { StyleSheet, View, Text, ActivityIndicator, Dimensions, TouchableOpacity, Linking, Animated, PanResponder } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, Circle, PROVIDER_DEFAULT } from 'react-native-maps';
 import * as Location from 'expo-location';
@@ -72,29 +72,33 @@ function getChargingSpecCards(station: any) {
   return [];
 }
 
-function getReachabilitySummary(stationReachability: any) {
-  if (!stationReachability) return '';
+function getReachabilitySummaryParts(stationReachability: any) {
+  if (!stationReachability) return null;
 
   const batteryLeftPercent = stationReachability.batteryLeftPercent;
   const minBatteryPercent = stationReachability.minBatteryPercent;
 
-  if (batteryLeftPercent === undefined || batteryLeftPercent === null) return '';
+  if (batteryLeftPercent === undefined || batteryLeftPercent === null) return null;
+
+  const prefix = 'Pin dự kiến khi đến Trạm Sạc: ';
+  const batteryText = `${batteryLeftPercent}%`;
+
   if (minBatteryPercent === undefined || minBatteryPercent === null) {
-    return `Pin dự kiến khi đến Trạm Sạc: ${batteryLeftPercent}%.`;
+    return { prefix, batteryText, suffix: '.' };
   }
 
   const sweetSpotMax = minBatteryPercent + 10;
   const band = `${minBatteryPercent}% -> ${sweetSpotMax}%`;
 
   if (batteryLeftPercent >= minBatteryPercent && batteryLeftPercent <= sweetSpotMax) {
-    return `Pin dự kiến khi đến Trạm Sạc: ${batteryLeftPercent}% (khoảng tối thiểu: ${band}).`;
+    return { prefix, batteryText, suffix: ` (khoảng tối thiểu: ${band}).` };
   }
 
   if (batteryLeftPercent > sweetSpotMax) {
-    return `Pin dự kiến khi đến Trạm Sạc: ${batteryLeftPercent}% (cao hơn khoảng tối thiểu: ${band}).`;
+    return { prefix, batteryText, suffix: ` (cao hơn khoảng tối thiểu: ${band}).` };
   }
 
-  return `Pin dự kiến khi đến Trạm Sạc: ${batteryLeftPercent}% (thấp hơn khoảng tối thiểu: ${band}).`;
+  return { prefix, batteryText, suffix: ` (thấp hơn khoảng tối thiểu: ${band}).` };
 }
 
 function getStationDistanceToStartKm(station: any, stationReachability: any) {
@@ -124,6 +128,28 @@ export default function MapScreen() {
   const [locationName, setLocationName] = useState('');
   const mapRef = useRef<MapView>(null);
   const routeRequestIdRef = useRef(0);
+  const stationCardPan = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const stationCardPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_event, gestureState) => (
+        Math.abs(gestureState.dx) + Math.abs(gestureState.dy) > 3
+      ),
+      onPanResponderGrant: () => {
+        stationCardPan.extractOffset();
+      },
+      onPanResponderMove: Animated.event(
+        [null, { dx: stationCardPan.x, dy: stationCardPan.y }],
+        { useNativeDriver: false },
+      ),
+      onPanResponderRelease: () => {
+        stationCardPan.flattenOffset();
+      },
+      onPanResponderTerminate: () => {
+        stationCardPan.flattenOffset();
+      },
+    }),
+  ).current;
 
   // Routing State
   const [originOverride, setOriginOverride] = useState<any>(null);
@@ -258,6 +284,11 @@ export default function MapScreen() {
     if (!selectedVehicle) return;
     setConditions(prev => ({ ...prev, consumptionWhKm: getAdjustedDefaultConsumption(selectedVehicle) }));
   }, [selectedVehicle]);
+
+  useEffect(() => {
+    stationCardPan.setOffset({ x: 0, y: 0 });
+    stationCardPan.setValue({ x: 0, y: 0 });
+  }, [selectedStation?.id, stationCardPan]);
 
   // Estimate range
   useEffect(() => {
@@ -547,7 +578,7 @@ export default function MapScreen() {
     ? getStationDistanceToDestinationKm(selectedStation, routeData, selectedStationDistanceToStartKm)
     : null;
   const selectedStationChargingSpecs = selectedStation ? getChargingSpecCards(selectedStation) : [];
-  const reachabilitySummary = getReachabilitySummary(reachability);
+  const reachabilitySummaryParts = getReachabilitySummaryParts(reachability);
 
   return (
     <View style={styles.container}>
@@ -667,7 +698,12 @@ export default function MapScreen() {
 
       {/* Floating Station Card */}
       {selectedStation && (
-        <View style={styles.stationCard}>
+        <Animated.View style={[styles.stationCard, { transform: stationCardPan.getTranslateTransform() }]}>
+          <View style={styles.stationCardDragHandle} {...stationCardPanResponder.panHandlers}>
+            <View style={styles.stationCardDragKnob} />
+            <Text style={styles.stationCardDragText}>Túm kéo ô thông tin</Text>
+          </View>
+
           {/* Header */}
           <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start'}}>
             <View style={{flex: 1, paddingRight: 10}}>
@@ -740,12 +776,28 @@ export default function MapScreen() {
               </View>
               {reachability.canReach && (
                 <Text style={{fontSize: 11, color: '#475569', marginTop: 6, lineHeight: 16}}>
-                  {reachabilitySummary || `Pin dự kiến khi đến Trạm Sạc: ${reachability.batteryLeftPercent}%.`}
+                  {reachabilitySummaryParts ? (
+                    <>
+                      <Text>{reachabilitySummaryParts.prefix}</Text>
+                      <Text style={styles.reachabilityBatteryText}>{reachabilitySummaryParts.batteryText}</Text>
+                      <Text>{reachabilitySummaryParts.suffix}</Text>
+                    </>
+                  ) : (
+                    `Pin dự kiến khi đến Trạm Sạc: ${reachability.batteryLeftPercent}%.`
+                  )}
                 </Text>
               )}
               {!reachability.canReach && (
                 <Text style={{fontSize: 11, color: '#475569', marginTop: 6, lineHeight: 16}}>
-                  {reachabilitySummary || `Cần sạc ở trạm gần hơn. Trạm này cách ${Math.round(reachability.distanceKm || 0)} km.`}
+                  {reachabilitySummaryParts ? (
+                    <>
+                      <Text>{reachabilitySummaryParts.prefix}</Text>
+                      <Text style={styles.reachabilityBatteryText}>{reachabilitySummaryParts.batteryText}</Text>
+                      <Text>{reachabilitySummaryParts.suffix}</Text>
+                    </>
+                  ) : (
+                    `Cần sạc ở trạm gần hơn. Trạm này cách ${Math.round(reachability.distanceKm || 0)} km.`
+                  )}
                 </Text>
               )}
             </View>
@@ -773,7 +825,7 @@ export default function MapScreen() {
             <Ionicons name="navigate" size={16} color="#fff" />
             <Text style={{color: '#fff', fontSize: 13, fontWeight: 'bold'}}>Bắt đầu đi với Google Map</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       )}
 
       {/* Cancel Route Button */}
@@ -906,6 +958,31 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 20,
     elevation: 8,
+  },
+  stationCardDragHandle: {
+    alignItems: 'center',
+    paddingBottom: 8,
+    marginTop: -4,
+    marginBottom: 4,
+  },
+  stationCardDragKnob: {
+    width: 42,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: '#cbd5e1',
+  },
+  stationCardDragText: {
+    marginTop: 4,
+    color: '#94a3b8',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  reachabilityBatteryText: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '900',
+    lineHeight: 18,
   },
   stationMarker: {
     width: 34,
