@@ -121,6 +121,42 @@ function getStationDistanceToDestinationKm(station: any, data: any, distanceToSt
   return null;
 }
 
+function getStationKey(station: any) {
+  if (!station) return '';
+  if (station.id !== undefined && station.id !== null) return String(station.id);
+
+  const latitude = Number(station.latitude);
+  const longitude = Number(station.longitude);
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    return `${latitude.toFixed(5)},${longitude.toFixed(5)}`;
+  }
+
+  return `${station.name || ''}|${station.address || ''}`;
+}
+
+function isSameStation(a: any, b: any) {
+  const aKey = getStationKey(a);
+  const bKey = getStationKey(b);
+  return Boolean(aKey && bKey && aKey === bKey);
+}
+
+function getArrivalBatteryPercent(station: any) {
+  const value = Number(station?.batteryAtStation);
+  return Number.isFinite(value) ? value : null;
+}
+
+function isStationInTargetBatteryBand(station: any, targetBatteryPercent: number) {
+  if (typeof station?.isInTargetBatteryBand === 'boolean') {
+    return station.isInTargetBatteryBand;
+  }
+
+  const batteryAtStation = getArrivalBatteryPercent(station);
+  if (batteryAtStation === null) return false;
+
+  const minBattery = Math.max(targetBatteryPercent, 5);
+  return batteryAtStation >= minBattery && batteryAtStation <= minBattery + 10;
+}
+
 export default function MapScreen() {
   // Location
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
@@ -192,7 +228,8 @@ export default function MapScreen() {
   ), [routeData]);
 
   const selectedRouteIndex = routeData?.selectedRouteIndex ?? 0;
-  const showRouteChoiceBar = !!destination && routeChoices.length > 1 && !selectedStation;
+  const isSheetFullyExpanded = sheetIndex >= 2;
+  const showRouteChoiceBar = !!destination && routeChoices.length > 1 && !selectedStation && !isSheetFullyExpanded;
   const activeOrigin = useMemo(() => (
     originOverride ||
     (location ? {
@@ -607,10 +644,10 @@ export default function MapScreen() {
             coordinate={originOverride}
             title="Điểm đi"
             anchor={{ x: 0.5, y: 0.5 }}
-            tracksViewChanges={false}
+            zIndex={600}
           >
-            <View style={styles.originMarkerHalo}>
-              <View style={styles.originMarkerDot} />
+            <View collapsable={false} style={styles.originMarkerHalo}>
+              <View collapsable={false} style={styles.originMarkerDot} />
             </View>
           </Marker>
         )}
@@ -650,19 +687,17 @@ export default function MapScreen() {
 
         {/* Render Stations */}
         {(routeData?.allRouteStations || routeData?.optimalStations)?.map((station: any) => {
-          const optimalStation = routeData?.optimalStations?.find((s: any) => s.id === station.id);
-          const isSuggested = Boolean(optimalStation);
-          const isTargetBandSuggestion = optimalStation?.isInTargetBatteryBand ?? (
-            optimalStation?.batteryAtStation >= Math.max(targetBatteryPercent, 5) &&
-            optimalStation?.batteryAtStation <= Math.max(targetBatteryPercent, 5) + 10
-          );
-          const isSelected = selectedStation?.id === station.id;
+          const optimalStation = routeData?.optimalStations?.find((s: any) => isSameStation(s, station));
+          const markerStation = optimalStation ? { ...station, ...optimalStation } : station;
+          const isSuggested = Boolean(markerStation?.isSuggested || markerStation?.isOptimal || optimalStation);
+          const isTargetBandSuggestion = isStationInTargetBatteryBand(markerStation, targetBatteryPercent);
+          const isSelected = isSameStation(selectedStation, markerStation);
           
           return (
             <Marker
-              key={station.id}
-              coordinate={{ latitude: station.latitude, longitude: station.longitude }}
-              onPress={() => handleStationSelect(station)}
+              key={getStationKey(station)}
+              coordinate={{ latitude: markerStation.latitude, longitude: markerStation.longitude }}
+              onPress={() => handleStationSelect(markerStation)}
             >
               <View style={[
                 styles.stationMarker, 
@@ -995,23 +1030,28 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   originMarkerHalo: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(37, 99, 235, 0.18)',
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(20, 100, 244, 0.2)',
     borderWidth: 1,
-    borderColor: 'rgba(37, 99, 235, 0.22)',
+    borderColor: 'rgba(20, 100, 244, 0.28)',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#1464F4',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
   originMarkerDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#2563eb',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#1464F4',
     borderWidth: 3,
     borderColor: '#ffffff',
-    shadowColor: '#2563eb',
+    shadowColor: '#1464F4',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.35,
     shadowRadius: 5,

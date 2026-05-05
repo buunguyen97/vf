@@ -225,10 +225,30 @@ router.post('/optimal-route', async (req, res) => {
     // PASS 3: Tính toán pin cho tất cả các trạm hiển thị
     // ============================================================
     // Bỏ qua giả lập sạc, hiển thị lượng pin thực tế nếu chạy một mạch
+    const getStationKey = (st) => {
+      if (st?.id !== undefined && st?.id !== null) return String(st.id);
+      return `${Number(st?.latitude).toFixed(5)},${Number(st?.longitude).toFixed(5)}`;
+    };
+    const suggestedStationsByKey = new Map(optimalStations.map(st => [getStationKey(st), st]));
+
     const displayStations = allRouteStations.map(st => {
       const batteryNeeded = kmToBatteryPct(st.distanceFromStartKm);
-      const batteryAtStation = Math.round(currentBattery - batteryNeeded);
-      return { ...st, batteryAtStation };
+      const batteryAtStationRaw = currentBattery - batteryNeeded;
+      const batteryAtStation = Math.round(batteryAtStationRaw);
+      const suggestedStation = suggestedStationsByKey.get(getStationKey(st));
+
+      return {
+        ...st,
+        batteryAtStation,
+        batteryAtStationRaw,
+        isInTargetBatteryBand: batteryAtStation >= minBatteryPct && batteryAtStation <= sweetSpotMax,
+        isSuggested: Boolean(suggestedStation),
+        isFallbackSuggested: Boolean(suggestedStation?.isFallbackSuggested),
+        isRecommended: Boolean(suggestedStation?.isRecommended),
+        isOptimal: Boolean(suggestedStation?.isOptimal),
+        stopNumber: suggestedStation?.stopNumber,
+        alternativeIndex: suggestedStation?.alternativeIndex,
+      };
     }).filter(st => st.batteryAtStation > 0);
 
     res.json({
