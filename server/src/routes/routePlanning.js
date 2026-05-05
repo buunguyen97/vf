@@ -15,6 +15,39 @@ function getDistance(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+function getNearestPointOnSegment(pointLat, pointLon, start, end) {
+  const refLatRad = ((pointLat + start[0] + end[0]) / 3) * Math.PI / 180;
+  const lonScale = 111.32 * Math.cos(refLatRad);
+  const latScale = 110.574;
+
+  const px = pointLon * lonScale;
+  const py = pointLat * latScale;
+  const ax = start[1] * lonScale;
+  const ay = start[0] * latScale;
+  const bx = end[1] * lonScale;
+  const by = end[0] * latScale;
+
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSquared = (dx * dx) + (dy * dy);
+  const fraction = lengthSquared === 0
+    ? 0
+    : Math.max(0, Math.min(1, (((px - ax) * dx) + ((py - ay) * dy)) / lengthSquared));
+
+  const nearestX = ax + (dx * fraction);
+  const nearestY = ay + (dy * fraction);
+  const nearestLat = nearestY / latScale;
+  const nearestLon = nearestX / lonScale;
+  const distanceKm = getDistance(pointLat, pointLon, nearestLat, nearestLon);
+
+  return {
+    latitude: nearestLat,
+    longitude: nearestLon,
+    distanceKm,
+    fraction,
+  };
+}
+
 function normalizeCoordinatePair(coords) {
   if (!Array.isArray(coords) || coords.length < 2) return null;
 
@@ -95,7 +128,7 @@ router.post('/optimal-route', async (req, res) => {
     // ============================================================
     // Sample route points at regular intervals to find nearby stations
     const allRouteStations = [];
-    const foundStationIds = new Set();
+    const stationsById = new Map();
     let cumulativeDistance = 0;
 
     // Tight radius: only stations genuinely on/adjacent to the route
@@ -106,23 +139,31 @@ router.post('/optimal-route', async (req, res) => {
       const p1 = polylineCoords[i];
       const p2 = polylineCoords[i + 1];
       const segDist = getDistance(p1[0], p1[1], p2[0], p2[1]);
-      cumulativeDistance += segDist;
+      const segmentStartDistance = cumulativeDistance;
 
-      // Check every point for tight 1km radius — can't afford to skip
+      // Snap marker display coordinates onto the selected route, but keep
+      // station latitude/longitude untouched for navigation.
       for (const st of allDbStations) {
-        if (foundStationIds.has(st.id)) continue;
+        const nearestRoutePoint = getNearestPointOnSegment(st.latitude, st.longitude, p1, p2);
+        if (nearestRoutePoint.distanceKm <= MAX_DETOUR_KM) {
+          const previousMatch = stationsById.get(st.id);
+          if (previousMatch && previousMatch.detourKmRaw <= nearestRoutePoint.distanceKm) continue;
 
-        const distToRoute = getDistance(p1[0], p1[1], st.latitude, st.longitude);
-        if (distToRoute <= MAX_DETOUR_KM) {
-          foundStationIds.add(st.id);
-          allRouteStations.push({
+          stationsById.set(st.id, {
             ...st,
-            distanceFromStartKm: Math.round((cumulativeDistance) * 10) / 10,
-            detourKm: Math.round(distToRoute * 1000) / 1000, // Precise to meter
+            displayLatitude: nearestRoutePoint.latitude,
+            displayLongitude: nearestRoutePoint.longitude,
+            distanceFromStartKm: Math.round((segmentStartDistance + (segDist * nearestRoutePoint.fraction)) * 10) / 10,
+            detourKm: Math.round(nearestRoutePoint.distanceKm * 1000) / 1000, // Precise to meter
+            detourKmRaw: nearestRoutePoint.distanceKm,
           });
         }
       }
+
+      cumulativeDistance += segDist;
     }
+
+    allRouteStations.push(...stationsById.values());
 
     // Sort stations by distance from start
     allRouteStations.sort((a, b) => a.distanceFromStartKm - b.distanceFromStartKm);

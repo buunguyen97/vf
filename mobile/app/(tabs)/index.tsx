@@ -157,6 +157,16 @@ function isStationInTargetBatteryBand(station: any, targetBatteryPercent: number
   return batteryAtStation >= minBattery && batteryAtStation <= minBattery + 10;
 }
 
+function getStationMarkerCoordinate(station: any) {
+  const displayLatitude = Number(station?.displayLatitude);
+  const displayLongitude = Number(station?.displayLongitude);
+  if (Number.isFinite(displayLatitude) && Number.isFinite(displayLongitude)) {
+    return { latitude: displayLatitude, longitude: displayLongitude };
+  }
+
+  return { latitude: station.latitude, longitude: station.longitude };
+}
+
 export default function MapScreen() {
   // Location
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
@@ -696,7 +706,8 @@ export default function MapScreen() {
           return (
             <Marker
               key={getStationKey(station)}
-              coordinate={{ latitude: markerStation.latitude, longitude: markerStation.longitude }}
+              coordinate={getStationMarkerCoordinate(markerStation)}
+              anchor={{ x: 0.5, y: 0.5 }}
               onPress={() => handleStationSelect(markerStation)}
             >
               <View style={[
@@ -704,7 +715,7 @@ export default function MapScreen() {
                 { backgroundColor: isTargetBandSuggestion ? '#22c55e' : (isSuggested ? '#f59e0b' : '#06b6d4') },
                 isSelected && styles.stationMarkerSelected
               ]}>
-                <Text style={styles.stationMarkerText}>{station.power_kw}</Text>
+                <Text style={styles.stationMarkerText}>{markerStation.power_kw}</Text>
               </View>
             </Marker>
           );
