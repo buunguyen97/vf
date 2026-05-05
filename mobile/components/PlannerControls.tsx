@@ -169,7 +169,7 @@ export default function PlannerControls({
           maximumValue={maxKm}
           step={0.1}
           value={kmPer1Percent}
-          onSlidingComplete={handleKmSliderChange}
+          onValueChange={handleKmSliderChange}
           minimumTrackTintColor="rgba(255,255,255,0.2)"
           maximumTrackTintColor="rgba(255,255,255,0.1)"
           thumbTintColor="#fff"

@@ -621,8 +621,6 @@ export default function MapScreen() {
               coordinates={toMapCoordinates(altRoute.polylineCoords)}
               strokeColor="#6b7280"
               strokeWidth={4}
-              tappable
-              onPress={() => handleRouteReplan(altRoute.index)}
             />
           );
         })}
@@ -850,11 +848,13 @@ export default function MapScreen() {
         snapPoints={snapPoints}
         onChange={setSheetIndex}
         handleComponent={renderSheetHandle}
+        enableContentPanningGesture={false}
         backgroundStyle={styles.bottomSheetBg}
       >
         <BottomSheetScrollView 
           contentContainerStyle={{ paddingBottom: 20 }}
           keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
         >
           {/* Route Error */}
           {routeError ? (
