@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios');
 const { getDb, closeDb } = require('./init');
 
 // ─── KML Parsing Helpers ─────────────────────────────────────────────
@@ -188,12 +189,12 @@ async function importKmlStations() {
 
   console.log('[KML Sync] Fetching KML data from Google Maps...');
 
-  const response = await fetch(KML_URL);
-  if (!response.ok) {
+  const response = await axios.get(KML_URL, { responseType: 'text', timeout: 30_000 });
+  if (response.status !== 200) {
     throw new Error(`Failed to fetch KML: ${response.status}`);
   }
 
-  const kmlText = await response.text();
+  const kmlText = response.data;
   console.log(`[KML Sync] Received KML data, length: ${kmlText.length} characters`);
 
   const newStations = parseKmlStations(kmlText);
