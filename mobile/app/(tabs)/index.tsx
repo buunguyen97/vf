@@ -126,6 +126,7 @@ export default function MapScreen() {
   const routeRequestIdRef = useRef(0);
 
   // Routing State
+  const [originOverride, setOriginOverride] = useState<any>(null);
   const [destination, setDestination] = useState<any>(null);
   const [routeError, setRouteError] = useState('');
 
@@ -149,7 +150,7 @@ export default function MapScreen() {
   
   // Bottom Sheet
   const bottomSheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ['15%', '50%', '85%'], []);
+  const snapPoints = useMemo(() => ['15%', '50%', '100%'], []);
   const [sheetIndex, setSheetIndex] = useState(1);
 
   // Derived
@@ -166,6 +167,13 @@ export default function MapScreen() {
 
   const selectedRouteIndex = routeData?.selectedRouteIndex ?? 0;
   const showRouteChoiceBar = !!destination && routeChoices.length > 1 && !selectedStation;
+  const activeOrigin = useMemo(() => (
+    originOverride ||
+    (location ? {
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+    } : null)
+  ), [originOverride, location]);
 
   // Fetch weather + location name
   const fetchWeatherForLocation = (lat: number, lon: number) => {
@@ -270,12 +278,33 @@ export default function MapScreen() {
     setIsParsingLink(true);
     try {
       const parsed = await evApi.parseGoogleMapsLink(link);
-      if (parsed.destination) {
-        setDestination({ latitude: parsed.destination[0], longitude: parsed.destination[1] });
+      const resolvedDestination = parsed.destination || parsed.origin || null;
+      const parsedOrigin = parsed.origin && parsed.destination
+        ? { latitude: parsed.origin[0], longitude: parsed.origin[1] }
+        : null;
+
+      if (resolvedDestination) {
+        if (parsedOrigin) {
+          setOriginOverride(parsedOrigin);
+          fetchWeatherForLocation(parsedOrigin.latitude, parsedOrigin.longitude);
+        } else {
+          setOriginOverride(null);
+        }
+        setDestination({ latitude: resolvedDestination[0], longitude: resolvedDestination[1] });
         setRouteData(null);
         setSelectedStation(null);
         setReachability(null);
         setRouteError('');
+        if (mapRef.current) {
+          const coords = [
+            ...(parsedOrigin ? [parsedOrigin] : []),
+            { latitude: resolvedDestination[0], longitude: resolvedDestination[1] },
+          ];
+          mapRef.current.fitToCoordinates(coords, {
+            edgePadding: { top: 80, right: 50, bottom: SCREEN_HEIGHT * 0.2, left: 50 },
+            animated: true,
+          });
+        }
       } else {
         setRouteError(parsed.message || 'Không tìm thấy thông tin tọa độ. Vui lòng thử dùng link đầy đủ từ Google Maps.');
       }
@@ -314,14 +343,14 @@ export default function MapScreen() {
   );
 
   const fitMapToRouteResult = (res: any) => {
-    if (!mapRef.current || !location) return;
+    if (!mapRef.current || !activeOrigin) return;
 
     let coords: any[] = [];
     if (res.polylineCoords && res.polylineCoords.length > 0) {
       coords = toMapCoordinates(res.polylineCoords);
     } else if (res.optimalStations) {
       coords = res.optimalStations.map((s: any) => ({ latitude: s.latitude, longitude: s.longitude }));
-      coords.push({ latitude: location.coords.latitude, longitude: location.coords.longitude });
+      coords.push(activeOrigin);
     }
 
     if (coords.length > 0) {
@@ -338,8 +367,8 @@ export default function MapScreen() {
       return;
     }
 
-    if (!location) {
-      setRouteError('Chưa lấy được vị trí hiện tại. Bạn bật GPS/quyền vị trí rồi thử lại nhé.');
+    if (!activeOrigin) {
+      setRouteError('Chưa có điểm đi. Bạn bật GPS hoặc dán link Google Maps có cả điểm đi và điểm đến nhé.');
       return;
     }
 
@@ -356,7 +385,7 @@ export default function MapScreen() {
       let res;
       if (destination) {
         res = await evApi.getOptimalRoute({
-          origin: [location.coords.latitude, location.coords.longitude],
+          origin: [activeOrigin.latitude, activeOrigin.longitude],
           destination: [destination.latitude, destination.longitude],
           waypoint: null,
           currentBattery: batteryPercent,
@@ -367,7 +396,7 @@ export default function MapScreen() {
           routeIndex: 0
         });
       } else {
-        const stations = await evApi.getChargers(location.coords.latitude, location.coords.longitude, 20);
+        const stations = await evApi.getChargers(activeOrigin.latitude, activeOrigin.longitude, 20);
         res = { optimalStations: stations.slice(0, 5), polylineCoords: [] };
       }
 
@@ -387,7 +416,7 @@ export default function MapScreen() {
   };
 
   const handleRouteReplan = async (routeIndex: number) => {
-    if (!destination || !location || !selectedVehicleId) return;
+    if (!destination || !activeOrigin || !selectedVehicleId) return;
     if (routeIndex === selectedRouteIndex) return;
 
     const requestId = routeRequestIdRef.current + 1;
@@ -419,7 +448,7 @@ export default function MapScreen() {
 
     try {
       const res = await evApi.getOptimalRoute({
-        origin: [location.coords.latitude, location.coords.longitude],
+        origin: [activeOrigin.latitude, activeOrigin.longitude],
         destination: [destination.latitude, destination.longitude],
         waypoint: null,
         currentBattery: batteryPercent,
@@ -461,11 +490,11 @@ export default function MapScreen() {
       return;
     }
 
-    if (!location || !selectedVehicleId) { setReachability(null); return; }
+    if (!activeOrigin || !selectedVehicleId) { setReachability(null); return; }
     setReachability(null);
     try {
       const data = await evApi.checkReachability({
-        currentLocation: [location.coords.latitude, location.coords.longitude],
+        currentLocation: [activeOrigin.latitude, activeOrigin.longitude],
         destination: [station.latitude, station.longitude],
         batteryPercent,
         targetBattery: targetBatteryPercent,
@@ -482,6 +511,7 @@ export default function MapScreen() {
   const resetRoute = () => {
     routeRequestIdRef.current += 1;
     setIsRouting(false);
+    setOriginOverride(null);
     setDestination(null);
     setRouteData(null);
     setSelectedStation(null);
@@ -497,10 +527,10 @@ export default function MapScreen() {
     );
   }
 
-  const initialRegion = location
+  const initialRegion = activeOrigin
     ? {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
+        latitude: activeOrigin.latitude,
+        longitude: activeOrigin.longitude,
         latitudeDelta: 0.05,
         longitudeDelta: 0.05,
       }
@@ -531,13 +561,21 @@ export default function MapScreen() {
         userInterfaceStyle="dark"
       >
         {/* Range Circle (when no route) */}
-        {location && !routeData && estimatedRange > 0 && (
+        {activeOrigin && !routeData && estimatedRange > 0 && (
           <Circle
-            center={{ latitude: location.coords.latitude, longitude: location.coords.longitude }}
+            center={activeOrigin}
             radius={Math.max(1, estimatedRange) * 1000}
             strokeColor={estimatedRange > 50 ? '#00B14F' : '#DA303E'}
             fillColor={estimatedRange > 50 ? 'rgba(0,177,79,0.1)' : 'rgba(218,48,62,0.1)'}
             strokeWidth={2}
+          />
+        )}
+
+        {originOverride && (
+          <Marker
+            coordinate={originOverride}
+            title="Điểm đi"
+            pinColor="green"
           />
         )}
 
@@ -794,7 +832,7 @@ export default function MapScreen() {
             setConditions={setConditions}
             onSuggestStations={handleSuggestStations}
             isLoadingStations={isRouting}
-            origin={location ? location.coords : null}
+            origin={activeOrigin}
             destination={destination}
             setDestination={setDestination}
             onParseLink={handleParseLink}
