@@ -15,7 +15,10 @@ const getApiUrl = () => {
 };
 
 const API_URL = getApiUrl();
-const OSRM_BASE = 'https://router.project-osrm.org';
+const OSRM_BASES = [
+  'https://router.project-osrm.org',
+  'http://router.project-osrm.org',
+];
 
 // Haversine distance (km)
 export function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -177,25 +180,35 @@ function addUniqueRoute(routes: any[], route: any) {
 // Fetch a single OSRM route, returns route object or null
 async function fetchOneRoute(coords: [number, number][]) {
   const coordStr = coords.map(c => `${c[1]},${c[0]}`).join(';');
-  const url = `${OSRM_BASE}/route/v1/driving/${coordStr}?overview=full&geometries=geojson&continue_straight=true`;
-  try {
+
+  for (const baseUrl of OSRM_BASES) {
+    const url = `${baseUrl}/route/v1/driving/${coordStr}?overview=full&geometries=geojson&continue_straight=true`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    const res = await fetch(url, { 
-      signal: controller.signal,
-      headers: { 'User-Agent': 'VFRangeAssistant/1.0' }
-    });
-    clearTimeout(timeoutId);
-    if (!res.ok) {
-      console.log('OSRM Error:', res.status, res.statusText);
-      return null;
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'VFRangeAssistant/1.0' }
+      });
+
+      if (!res.ok) {
+        console.log('OSRM Error:', baseUrl, res.status, res.statusText);
+        continue;
+      }
+
+      const data = await res.json();
+      if (data.code === 'Ok' && data.routes?.length > 0) return data.routes[0];
+
+      console.log('OSRM route not found:', baseUrl, data.code, data.message || '');
+    } catch (error: any) {
+      console.log('OSRM fetch failed:', baseUrl, error?.message || error);
+    } finally {
+      clearTimeout(timeoutId);
     }
-    const data = await res.json();
-    if (data.code === 'Ok' && data.routes?.length > 0) return data.routes[0];
-    return null;
-  } catch {
-    return null;
   }
+
+  return null;
 }
 
 async function fetchVietnamCorridorRoutes(origin: [number, number], destination: [number, number], waypoint: [number, number] | null) {
