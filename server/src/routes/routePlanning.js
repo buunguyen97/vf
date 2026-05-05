@@ -48,6 +48,24 @@ function getNearestPointOnSegment(pointLat, pointLon, start, end) {
   };
 }
 
+function getRouteSideDisplayPoint(station, nearestRoutePoint, maxOffsetKm = 0.12) {
+  if (!nearestRoutePoint.distanceKm) {
+    return {
+      latitude: nearestRoutePoint.latitude,
+      longitude: nearestRoutePoint.longitude,
+    };
+  }
+
+  // Show markers just off the route, toward the real station coordinate. This
+  // keeps the marker visually tied to the route without flipping to the wrong
+  // side of nearby/parallel roads.
+  const offsetRatio = Math.min(1, maxOffsetKm / nearestRoutePoint.distanceKm);
+  return {
+    latitude: nearestRoutePoint.latitude + ((station.latitude - nearestRoutePoint.latitude) * offsetRatio),
+    longitude: nearestRoutePoint.longitude + ((station.longitude - nearestRoutePoint.longitude) * offsetRatio),
+  };
+}
+
 function normalizeCoordinatePair(coords) {
   if (!Array.isArray(coords) || coords.length < 2) return null;
 
@@ -148,11 +166,12 @@ router.post('/optimal-route', async (req, res) => {
         if (nearestRoutePoint.distanceKm <= MAX_DETOUR_KM) {
           const previousMatch = stationsById.get(st.id);
           if (previousMatch && previousMatch.detourKmRaw <= nearestRoutePoint.distanceKm) continue;
+          const displayPoint = getRouteSideDisplayPoint(st, nearestRoutePoint);
 
           stationsById.set(st.id, {
             ...st,
-            displayLatitude: nearestRoutePoint.latitude,
-            displayLongitude: nearestRoutePoint.longitude,
+            displayLatitude: displayPoint.latitude,
+            displayLongitude: displayPoint.longitude,
             distanceFromStartKm: Math.round((segmentStartDistance + (segDist * nearestRoutePoint.fraction)) * 10) / 10,
             detourKm: Math.round(nearestRoutePoint.distanceKm * 1000) / 1000, // Precise to meter
             detourKmRaw: nearestRoutePoint.distanceKm,
@@ -184,58 +203,44 @@ router.post('/optimal-route', async (req, res) => {
     const enrichedCandidateStations = candidateStations.map(st => {
       const batteryNeeded = kmToBatteryPct(st.distanceFromStartKm);
       const batteryOnArrival = currentBattery - batteryNeeded;
-      const sweetSpotGap = batteryOnArrival < minBatteryPct
-        ? minBatteryPct - batteryOnArrival
-        : Math.max(0, batteryOnArrival - sweetSpotMax);
+      const batteryAtStation = Math.round(batteryOnArrival);
+      const sweetSpotGap = batteryAtStation < minBatteryPct
+        ? minBatteryPct - batteryAtStation
+        : Math.max(0, batteryAtStation - sweetSpotMax);
 
       return {
         ...st,
-        batteryAtStation: Math.round(batteryOnArrival),
+        batteryAtStation,
         batteryAtStationRaw: batteryOnArrival,
         sweetSpotGap,
-        isInTargetBatteryBand: batteryOnArrival >= minBatteryPct && batteryOnArrival <= sweetSpotMax,
+        isInTargetBatteryBand: batteryAtStation >= minBatteryPct && batteryAtStation <= sweetSpotMax,
         score: st.power_kw - (st.detourKm * 50),
       };
     });
 
     const matchingStations = enrichedCandidateStations.filter(st => st.isInTargetBatteryBand);
 
-    matchingStations.sort((a, b) => b.score - a.score);
+    const suggestedStations = enrichedCandidateStations
+      .filter(st => st.batteryAtStation >= minBatteryPct)
+      .sort((a, b) => {
+        if (a.sweetSpotGap !== b.sweetSpotGap) return a.sweetSpotGap - b.sweetSpotGap;
+        if (a.isInTargetBatteryBand !== b.isInTargetBatteryBand) return a.isInTargetBatteryBand ? -1 : 1;
+        if (a.detourKm !== b.detourKm) return a.detourKm - b.detourKm;
+        return b.power_kw - a.power_kw;
+      })
+      .slice(0, 3);
 
-    if (matchingStations.length > 0) {
-       matchingStations.forEach((st, idx) => {
-         st.isOptimal = true;
-         st.isSuggested = true;
-         st.stopNumber = 1;
-         st.isRecommended = idx === 0;
-         st.alternativeIndex = idx;
-         optimalStations.push(st);
-       });
-       chargingStops.push({ stopNumber: 1, stations: optimalStations });
-    }
-
-    if (matchingStations.length === 0) {
-      const fallbackStations = enrichedCandidateStations
-        .filter(st => st.batteryAtStationRaw >= minBatteryPct)
-        .sort((a, b) => {
-          if (a.sweetSpotGap !== b.sweetSpotGap) return a.sweetSpotGap - b.sweetSpotGap;
-          if (a.detourKm !== b.detourKm) return a.detourKm - b.detourKm;
-          return b.power_kw - a.power_kw;
-        })
-        .slice(0, 3);
-
-      if (fallbackStations.length > 0) {
-        fallbackStations.forEach((st, idx) => {
-          st.isOptimal = true;
-          st.stopNumber = 1;
-          st.isRecommended = idx === 0;
-          st.isFallbackSuggested = true;
-          st.isSuggested = true;
-          st.alternativeIndex = idx;
-          optimalStations.push(st);
-        });
-        chargingStops.push({ stopNumber: 1, stations: fallbackStations });
-      }
+    if (suggestedStations.length > 0) {
+      suggestedStations.forEach((st, idx) => {
+        st.isOptimal = true;
+        st.stopNumber = 1;
+        st.isRecommended = idx === 0;
+        st.isFallbackSuggested = !st.isInTargetBatteryBand;
+        st.isSuggested = true;
+        st.alternativeIndex = idx;
+        optimalStations.push(st);
+      });
+      chargingStops.push({ stopNumber: 1, stations: suggestedStations });
     }
 
     let insufficientBattery = false;

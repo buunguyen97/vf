@@ -9,7 +9,6 @@ import { evApi } from '../../services/api';
 import { getAdjustedDefaultConsumption } from '../../utils/consumption';
 import { sortVehiclesByVinFastOrder } from '../../utils/vehicles';
 import PlannerControls from '../../components/PlannerControls';
-import RouteItinerary from '../../components/RouteItinerary';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -146,12 +145,8 @@ function getArrivalBatteryPercent(station: any) {
 }
 
 function isStationInTargetBatteryBand(station: any, targetBatteryPercent: number) {
-  if (typeof station?.isInTargetBatteryBand === 'boolean') {
-    return station.isInTargetBatteryBand;
-  }
-
   const batteryAtStation = getArrivalBatteryPercent(station);
-  if (batteryAtStation === null) return false;
+  if (batteryAtStation === null) return station?.isInTargetBatteryBand === true;
 
   const minBattery = Math.max(targetBatteryPercent, 5);
   return batteryAtStation >= minBattery && batteryAtStation <= minBattery + 10;
@@ -218,6 +213,7 @@ export default function MapScreen() {
   const [isRouting, setIsRouting] = useState(false);
   const [isParsingLink, setIsParsingLink] = useState(false);
   const [selectedStation, setSelectedStation] = useState<any>(null);
+  const [lastViewedStationKey, setLastViewedStationKey] = useState<string | null>(null);
   const [reachability, setReachability] = useState<any>(null);
   
   // Bottom Sheet
@@ -371,6 +367,7 @@ export default function MapScreen() {
         setDestination({ latitude: resolvedDestination[0], longitude: resolvedDestination[1] });
         setRouteData(null);
         setSelectedStation(null);
+        setLastViewedStationKey(null);
         setReachability(null);
         setRouteError('');
         if (mapRef.current) {
@@ -455,6 +452,7 @@ export default function MapScreen() {
 
     setIsRouting(true);
     setSelectedStation(null);
+    setLastViewedStationKey(null);
     setReachability(null);
     setRouteError('');
     bottomSheetRef.current?.collapse(); 
@@ -504,6 +502,7 @@ export default function MapScreen() {
 
     setIsRouting(true);
     setSelectedStation(null);
+    setLastViewedStationKey(null);
     setReachability(null);
     setRouteError('');
     bottomSheetRef.current?.collapse();
@@ -554,6 +553,7 @@ export default function MapScreen() {
 
   // Station select with reachability check (ported from web)
   const handleStationSelect = async (station: any) => {
+    setLastViewedStationKey(getStationKey(station));
     setSelectedStation(station);
     bottomSheetRef.current?.collapse();
 
@@ -593,6 +593,7 @@ export default function MapScreen() {
     setDestination(null);
     setRouteData(null);
     setSelectedStation(null);
+    setLastViewedStationKey(null);
     setReachability(null);
     setRouteError('');
   };
@@ -671,19 +672,43 @@ export default function MapScreen() {
             <Polyline
               key={`alt-route-${altRoute.index}`}
               coordinates={toMapCoordinates(altRoute.polylineCoords)}
-              strokeColor="#6b7280"
+              strokeColor="rgba(148, 163, 184, 0.62)"
               strokeWidth={4}
+              lineCap="round"
+              lineJoin="round"
+              zIndex={5}
             />
           );
         })}
 
         {/* Render Route Polyline */}
         {routeData?.polylineCoords && routeData.polylineCoords.length > 0 && (
-          <Polyline
-            coordinates={toMapCoordinates(routeData.polylineCoords)}
-            strokeColor="#1464F4"
-            strokeWidth={5}
-          />
+          <>
+            <Polyline
+              coordinates={toMapCoordinates(routeData.polylineCoords)}
+              strokeColor="rgba(0, 0, 0, 0.42)"
+              strokeWidth={13}
+              lineCap="round"
+              lineJoin="round"
+              zIndex={20}
+            />
+            <Polyline
+              coordinates={toMapCoordinates(routeData.polylineCoords)}
+              strokeColor="rgba(255, 255, 255, 0.92)"
+              strokeWidth={10}
+              lineCap="round"
+              lineJoin="round"
+              zIndex={21}
+            />
+            <Polyline
+              coordinates={toMapCoordinates(routeData.polylineCoords)}
+              strokeColor="#006BFF"
+              strokeWidth={7}
+              lineCap="round"
+              lineJoin="round"
+              zIndex={22}
+            />
+          </>
         )}
 
         {/* Destination Marker */}
@@ -699,23 +724,32 @@ export default function MapScreen() {
         {(routeData?.allRouteStations || routeData?.optimalStations)?.map((station: any) => {
           const optimalStation = routeData?.optimalStations?.find((s: any) => isSameStation(s, station));
           const markerStation = optimalStation ? { ...station, ...optimalStation } : station;
-          const isSuggested = Boolean(markerStation?.isSuggested || markerStation?.isOptimal || optimalStation);
+          const stationKey = getStationKey(markerStation);
           const isTargetBandSuggestion = isStationInTargetBatteryBand(markerStation, targetBatteryPercent);
+          const isSuggestedStation = Boolean(markerStation?.isSuggested || markerStation?.isOptimal || optimalStation);
           const isSelected = isSameStation(selectedStation, markerStation);
+          const isLastViewed = lastViewedStationKey === stationKey;
           
           return (
             <Marker
-              key={getStationKey(station)}
+              key={stationKey}
               coordinate={getStationMarkerCoordinate(markerStation)}
               anchor={{ x: 0.5, y: 0.5 }}
               onPress={() => handleStationSelect(markerStation)}
             >
-              <View style={[
-                styles.stationMarker, 
-                { backgroundColor: isTargetBandSuggestion ? '#22c55e' : (isSuggested ? '#f59e0b' : '#06b6d4') },
-                isSelected && styles.stationMarkerSelected
-              ]}>
-                <Text style={styles.stationMarkerText}>{markerStation.power_kw}</Text>
+              <View
+                style={[
+                  styles.stationMarkerShell,
+                  isLastViewed && styles.stationMarkerViewed,
+                ]}
+              >
+                <View style={[
+                  styles.stationMarker,
+                  { backgroundColor: (isSuggestedStation || isTargetBandSuggestion) ? '#22c55e' : '#06b6d4' },
+                  isSelected && styles.stationMarkerSelected
+                ]}>
+                  <Text style={styles.stationMarkerText}>{markerStation.power_kw}</Text>
+                </View>
               </View>
             </Marker>
           );
@@ -919,15 +953,6 @@ export default function MapScreen() {
             </View>
           ) : null}
 
-          {routeData && (
-            <RouteItinerary
-              stations={routeData.optimalStations}
-              chargingStops={routeData.chargingStops}
-              onStationSelect={handleStationSelect}
-              insufficientBattery={routeData.insufficientBattery}
-            />
-          )}
-
           <PlannerControls 
             vehicles={vehicles}
             selectedVehicleId={selectedVehicleId}
@@ -1067,6 +1092,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 5,
     elevation: 4,
+  },
+  stationMarkerShell: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    backgroundColor: 'transparent',
+  },
+  stationMarkerViewed: {
+    borderColor: '#bfdbfe',
+    backgroundColor: 'rgba(20, 100, 244, 0.18)',
+    shadowColor: '#1464F4',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
+    elevation: 8,
   },
   stationMarker: {
     width: 34,
