@@ -177,12 +177,12 @@ function addUniqueRoute(routes: any[], route: any) {
   if (!isDuplicate) routes.push(route);
 }
 
-// Fetch a single OSRM route, returns route object or null
-async function fetchOneRoute(coords: [number, number][]) {
+async function fetchRoutes(coords: [number, number][], alternatives = false) {
   const coordStr = coords.map(c => `${c[1]},${c[0]}`).join(';');
+  const alternativesParam = alternatives ? '3' : 'false';
 
   for (const baseUrl of OSRM_BASES) {
-    const url = `${baseUrl}/route/v1/driving/${coordStr}?overview=full&geometries=geojson&continue_straight=true`;
+    const url = `${baseUrl}/route/v1/driving/${coordStr}?overview=full&geometries=geojson&alternatives=${alternativesParam}&continue_straight=false`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
@@ -198,7 +198,7 @@ async function fetchOneRoute(coords: [number, number][]) {
       }
 
       const data = await res.json();
-      if (data.code === 'Ok' && data.routes?.length > 0) return data.routes[0];
+      if (data.code === 'Ok' && data.routes?.length > 0) return data.routes;
 
       console.log('OSRM route not found:', baseUrl, data.code, data.message || '');
     } catch (error: any) {
@@ -208,7 +208,13 @@ async function fetchOneRoute(coords: [number, number][]) {
     }
   }
 
-  return null;
+  return [];
+}
+
+// Fetch a single OSRM route, returns route object or null
+async function fetchOneRoute(coords: [number, number][]) {
+  const routes = await fetchRoutes(coords, false);
+  return routes[0] || null;
 }
 
 async function fetchVietnamCorridorRoutes(origin: [number, number], destination: [number, number], waypoint: [number, number] | null) {
@@ -228,48 +234,20 @@ async function fetchOSRMRoutes(origin: [number, number], destination: [number, n
     : [origin, destination];
   const totalDistApprox = getDistance(origin[0], origin[1], destination[0], destination[1]);
 
-  const mainRoute = await fetchOneRoute(mainCoords);
-  const shouldFetchCorridors = !mainRoute || !isVietnamOnlyRoute(mainRoute) || totalDistApprox > 250;
+  const mainRoutes = await fetchRoutes(mainCoords, !waypoint);
+  const hasVietnamMainRoute = mainRoutes.some((route: any) => isVietnamOnlyRoute(route));
+  const shouldFetchCorridors = !hasVietnamMainRoute || totalDistApprox > 250;
   const corridorRoutes = shouldFetchCorridors
     ? await fetchVietnamCorridorRoutes(origin, destination, waypoint)
     : [];
 
-  if (!mainRoute && !corridorRoutes.length) {
+  if (!mainRoutes.length && !corridorRoutes.length) {
     throw new Error('Không tìm thấy đường đi giữa hai điểm này.');
   }
 
   const routes: any[] = [];
-  addUniqueRoute(routes, mainRoute);
+  mainRoutes.forEach((route: any) => addUniqueRoute(routes, route));
   corridorRoutes.forEach((route) => addUniqueRoute(routes, route));
-
-  // Generate alternative routes if no waypoint
-  if (!waypoint) {
-    if (totalDistApprox > 3) {
-      const midLat = (origin[0] + destination[0]) / 2;
-      const midLon = (origin[1] + destination[1]) / 2;
-      const dx = destination[1] - origin[1];
-      const dy = destination[0] - origin[0];
-      const len = Math.sqrt(dx*dx + dy*dy);
-
-      if (len > 0) {
-        const nx = -dy / len;
-        const ny = dx / len;
-        const shiftKm = Math.min(totalDistApprox * 0.2, 30);
-        const shiftDeg = shiftKm / 111.0;
-
-        const leftWp: [number, number] = [midLat + ny * shiftDeg, midLon + nx * shiftDeg];
-        const rightWp: [number, number] = [midLat - ny * shiftDeg, midLon - nx * shiftDeg];
-
-        const [leftRoute, rightRoute] = await Promise.all([
-          fetchOneRoute([origin, leftWp, destination]),
-          fetchOneRoute([origin, rightWp, destination]),
-        ]);
-
-        addUniqueRoute(routes, leftRoute);
-        addUniqueRoute(routes, rightRoute);
-      }
-    }
-  }
 
   if (!routes.length) {
     throw new Error('Không tìm được tuyến chỉ đi trong Việt Nam. Bạn thử thêm một điểm trung gian trong Việt Nam.');
